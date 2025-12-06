@@ -3,6 +3,10 @@ import sys
 import logging
 import json
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Ensure src is in python path so we can import lib
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DataPilot Debug</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>DataPilot AI - Debug Panel</h1>
+    
+    <div class="section">
+        <h2>1. Check Backend API</h2>
+        <button onclick="checkBackend()">Test Backend Connection</button>
+        <pre id="backend-result">Click button to test...</pre>
+    </div>
+    
+    <div class="section">
+        <h2>2. Check Latest Job</h2>
+        <button onclick="checkLatestJob()">Get Latest Job Status</button>
+        <pre id="job-result">Click button to test...</pre>
+    </div>
+    
+    <div class="section">
+        <h2>3. Navigate to Results</h2>
+        <input type="text" id="jobIdInput" placeholder="Enter Job ID" style="width: 300px; padding: 8px;">
+        <button onclick="goToResults()">Go to Results Page</button>
+    </div>
+    
+    <div class="section">
+        <h2>4. Upload New File</h2>
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.json,.pdf">
+        <button onclick="uploadFile()">Upload & Process</button>
+        <pre id="upload-result">Select a file and click upload...</pre>
+    </div>
+
+    <script>
+        async function checkBackend() {
+            const result = document.getElementById('backend-result');
+            try {
+                const response = await fetch('/api/job-status?jobId=test');
+                result.textContent = `✅ Backend is running!\nStatus: ${response.status}\nResponse: ${await response.text()}`;
+                result.className = 'success';
+            } catch (error) {
+                result.textContent = `❌ Backend error: ${error.message}`;
+                result.className = 'error';
+            }
+        }
+        
+        async function checkLatestJob() {
+            const result = document.getElementById('job-result');
+            result.textContent = 'Checking Redis for latest job...';
+            
+            try {
+                // This would need a backend endpoint to check Redis
+                // For now, just show instructions
+                result.textContent = `To check latest job, run this command in terminal:
+                
+.venv\\Scripts\\python.exe check_stuck_jobs.py
+
+Then use the job ID shown to navigate to results.`;
+            } catch (error) {
+                result.textContent = `Error: ${error.message}`;
+                result.className = 'error';
+            }
+        }
+        
+        function goToResults() {
+            const jobId = document.getElementById('jobIdInput').value.trim();
+            if (!jobId) {
+                alert('Please enter a job ID');
+                return;
+            }
+            window.location.href = `/results?jobId=${jobId}`;
+        }
+        
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const result = document.getElementById('upload-result');
+            
+            if (!fileInput.files[0]) {
+                alert('Please select a file');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            result.textContent = 'Uploading...';
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    result.textContent = `✅ Upload successful!
+Job ID: ${data.jobId}
+Status: ${data.status}
+
+Redirecting to loading page in 2 seconds...`;
+                    result.className = 'success';
+                    
+                    setTimeout(() => {
+                        window.location.href = `/loading?jobId=${data.jobId}`;
+                    }, 2000);
+                } else {
+                    result.textContent = `❌ Upload failed: ${JSON.stringify(data, null, 2)}`;
+                    result.className = 'error';
+                }
+            } catch (error) {
+                result.textContent = `❌ Error: ${error.message}`;
+                result.className = 'error';
+            }
+        }
+    </script>
+</body>
+</html>

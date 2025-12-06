@@ -107,6 +107,11 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
     """
     start_time = time.time()
     
+    print(f"[LLM] generate_insights called for file: {file_info.get('name', 'unknown')}")
+    print(f"[LLM] Schema columns: {len(schema) if isinstance(schema, list) else 'N/A'}")
+    print(f"[LLM] Preview rows: {len(preview) if isinstance(preview, list) else 'N/A'}")
+    logger.info(f"generate_insights called for {file_info.get('name')}")
+    
     # 1. Check Mock Mode
     if os.getenv("LLM_MOCK", "false").lower() == "true":
         logger.info("LLM_MOCK=true, returning canned insights.")
@@ -150,6 +155,7 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
     def _make_llm_call():
         """Inner function for retry wrapper"""
         logger.info(f"Sending request to LLM ({model_name})...")
+        print(f"[LLM] Calling {model_name} with timeout=60s...")
         
         response = client.chat.completions.create(
             model=model_name,
@@ -157,7 +163,8 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
                 {"role": "system", "content": "You are a data analyst. Output valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.0
+            temperature=0.0,
+            timeout=60.0  # 60 second timeout to prevent hanging
         )
         
         latency = time.time() - start_time
@@ -198,7 +205,12 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
         )
     except Exception as e:
         # All retries failed
+        import traceback
+        error_details = traceback.format_exc()
         logger.error(f"LLM failed after {LLM_RETRY_ATTEMPTS} attempts: {e}")
+        logger.error(f"Full traceback:\n{error_details}")
+        print(f"[LLM ERROR] Failed after {LLM_RETRY_ATTEMPTS} attempts: {e}")
+        print(f"[LLM ERROR] Traceback:\n{error_details}")
         _record_llm_failure()
         return _get_fallback_response(f"llm_failure_fallback: {str(e)}")
 
@@ -206,19 +218,48 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
 
 def _get_mock_response() -> Dict[str, Any]:
     return {
-        "analystInsights": [
+        "insightsAnalyst": [
             {
                 "id": "i1",
-                "text": "Mock Insight 1: Data shows expected mock patterns.",
-                "evidence": {
-                    "aggregates": {"MockCount": 100},
-                    "row_indices": [0, 1]
-                }
+                "title": "Mock Data Pattern Detected",
+                "summary": "Mock Insight 1: Data shows expected mock patterns with consistent values.",
+                "severity": "info",
+                "evidence": [
+                    {
+                        "type": "aggregate",
+                        "key": "MockCount",
+                        "value": 100,
+                        "description": "Total mock records"
+                    },
+                    {
+                        "type": "row",
+                        "rowIndex": 0,
+                        "value": "Sample row data",
+                        "description": "First row reference"
+                    }
+                ],
+                "recommendation": "Review actual data for real insights"
+            }
+        ],
+        "insightsBusiness": [
+            {
+                "id": "b1",
+                "title": "Mock Business Opportunity",
+                "summary": "Mock business insight showing potential areas for improvement.",
+                "severity": "info",
+                "evidence": [],
+                "recommendation": "Consider implementing real LLM for actual insights"
             }
         ],
         "businessSummary": [
-            "Mock Business Summary Point 1",
-            "Mock Business Summary Point 2"
+            {
+                "text": "Mock Business Summary Point 1: System is operating in mock mode",
+                "evidenceKeys": []
+            },
+            {
+                "text": "Mock Business Summary Point 2: Enable LLM for real insights",
+                "evidenceKeys": []
+            }
         ],
         "_meta": {
             "model": "mock-local",
@@ -228,10 +269,17 @@ def _get_mock_response() -> Dict[str, Any]:
 
 def _get_fallback_response(reason: str) -> Dict[str, Any]:
     return {
-        "analystInsights": [],
+        "insightsAnalyst": [],
+        "insightsBusiness": [],
         "businessSummary": [
-            "Automated insights not available.",
-            "Please review metadata and charts."
+            {
+                "text": "Automated insights not available.",
+                "evidenceKeys": []
+            },
+            {
+                "text": "Please review metadata and charts.",
+                "evidenceKeys": []
+            }
         ],
         "issues": [reason],
         "_meta": {

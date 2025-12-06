@@ -28,10 +28,16 @@ export default function FileSummaryCard() {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
-            startJob(response.data.jobId);
-            router.push('/loading');
+            const jobId = response.data.jobId;
+            console.log('File uploaded successfully, jobId:', jobId);
+
+            startJob(jobId);
+
+            // Navigate to loading page with jobId in URL
+            router.push(`/loading?jobId=${jobId}`);
         } catch (error) {
             console.error("Upload failed", error);
+            alert('Upload failed. Please try again.');
             setIsUploading(false);
         }
     };

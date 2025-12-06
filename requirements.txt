@@ -9,7 +9,7 @@ pdfplumber
 pyarrow
 google-generativeai
 openai
+python-dotenv
 
 rq
 flask-cors
-

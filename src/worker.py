@@ -6,6 +6,10 @@ import signal
 import redis
 import threading
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Add src to path so imports work whether run from root or src
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
