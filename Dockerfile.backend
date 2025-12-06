@@ -1,0 +1,30 @@
+# Use official Python runtime as a parent image
+FROM python:3.11-slim
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Install system dependencies (e.g., for pandas/numpy compilation if needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application code
+COPY src/ src/
+COPY .env.example .env.example
+
+# Set environment variables
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+
+# Expose port (for API)
+EXPOSE 5328
+
+# Default command (overridden in docker-compose)
+CMD ["python", "src/api/upload/route.py"]

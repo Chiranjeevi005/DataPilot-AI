@@ -56,7 +56,7 @@ export default function ResultsPage() {
 
                         {/* KPIs */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                            {results.kpis.map((kpi, i) => (
+                            {results.kpis && results.kpis.map((kpi, i) => (
                                 <KpiCard key={i} data={kpi} />
                             ))}
                         </div>
@@ -65,14 +65,14 @@ export default function ResultsPage() {
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             {/* Charts Section - Spans 2 cols */}
                             <div className="lg:col-span-2 space-y-8">
-                                {results.chartSpecs.map((spec) => (
+                                {results.chartSpecs && results.chartSpecs.map((spec) => (
                                     <ChartCard key={spec.id} spec={spec} />
                                 ))}
                             </div>
 
                             {/* Insights Panel - Spans 1 col */}
                             <div className="lg:col-span-1">
-                                <InsightPanel insights={results.insights} />
+                                <InsightPanel insights={results.insights || []} />
                             </div>
                         </div>
 

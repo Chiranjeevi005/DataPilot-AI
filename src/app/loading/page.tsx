@@ -27,7 +27,7 @@ export default function LoadingPage() {
 
         const pollStatus = async () => {
             try {
-                const { data } = await axios.get(`/api/job-status?jobId=${jobId}`);
+                const { data } = await axios.get(`/api/job-status/${jobId}`);
                 if (data.status === 'completed') {
                     // Fetch results
                     updateJobStatus('completed', 5); // All steps done

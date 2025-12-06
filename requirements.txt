@@ -10,6 +10,6 @@ pyarrow
 google-generativeai
 openai
 
-# Optional: Observability
-# sentry-sdk  # Uncomment to enable Sentry error tracking
+rq
+flask-cors
 

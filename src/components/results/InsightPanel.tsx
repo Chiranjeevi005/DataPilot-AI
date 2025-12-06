@@ -15,9 +15,9 @@ interface InsightPanelProps {
     insights: Insight[];
 }
 
-export default function InsightPanel({ insights }: InsightPanelProps) {
+export default function InsightPanel({ insights = [] }: InsightPanelProps) {
     const [activeTab, setActiveTab] = useState<'analyst' | 'business'>('analyst');
-    const filteredInsights = insights.filter(i => i.type === activeTab);
+    const filteredInsights = (insights || []).filter(i => i.type === activeTab);
 
     return (
         <Card className="h-full border-none shadow-lg shadow-blue-900/5 bg-white/80 backdrop-blur-sm sticky top-24">

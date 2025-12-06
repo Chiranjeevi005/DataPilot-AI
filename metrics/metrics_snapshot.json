@@ -1,5 +1,19 @@
 {
-  "timestamp": "2025-12-06T14:15:37.202025Z",
-  "counters": {},
-  "histograms": {}
+  "timestamp": "2025-12-06T15:12:56.213793Z",
+  "counters": {
+    "jobs_received_total": 1,
+    "jobs_completed_total": 1
+  },
+  "histograms": {
+    "avg_processing_time_seconds": {
+      "count": 1,
+      "sum": 0.12228399999912654,
+      "avg": 0.12228399999912654,
+      "min": 0.12228399999912654,
+      "max": 0.12228399999912654,
+      "p50": 0.12228399999912654,
+      "p95": 0.12228399999912654,
+      "p99": 0.12228399999912654
+    }
+  }
 }

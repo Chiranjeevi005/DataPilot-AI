@@ -1,0 +1,31 @@
+# Use Node.js LTS image
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build the Next.js app
+# Note: We might skip build in dev mode, but for a solid container let's build or just dev.
+# For a "run all servers" dev setup, we usually run `npm run dev`.
+# However, `npm run dev` in a container is tricky with hot reloading on Windows.
+# Let's try to stick to a production-like build for stability, or `npm run dev` if specifically requested.
+# The user asked to "run the server", implying usage.
+# Let's use dev mode for now to keep it consistent with their dev experience, 
+# BUT exposed on 0.0.0.0 so host can access.
+EXPOSE 3003
+
+# Set env to bind to all interfaces
+ENV PORT=3003
+ENV HOSTNAME="0.0.0.0"
+
+# Command
+CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]

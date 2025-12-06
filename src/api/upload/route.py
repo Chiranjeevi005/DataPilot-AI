@@ -19,7 +19,7 @@ try:
         current_timestamp_iso,
         get_max_upload_size
     )
-    from src.lib.storage import save_file_to_blob, save_file_to_tmp
+    from src.lib.storage import save_file_to_blob, save_file_to_tmp, get_storage_path
     from src.lib.queue import get_redis_client, create_job_key, enqueue_job
 except ImportError:
     # Fallback for when running from different contexts or if src is not a package
@@ -32,7 +32,7 @@ except ImportError:
         current_timestamp_iso,
         get_max_upload_size
     )
-    from lib.storage import save_file_to_blob, save_file_to_tmp
+    from lib.storage import save_file_to_blob, save_file_to_tmp, get_storage_path
     from lib.queue import get_redis_client, create_job_key, enqueue_job
 
 # Initialize Flask app
@@ -41,6 +41,14 @@ app = Flask(__name__)
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Add file handler to capture errors we can't see in detached consoles
+fh = logging.FileHandler('backend_errors.log')
+fh.setLevel(logging.ERROR)
+logger.addHandler(fh)
+
+from flask_cors import CORS
+CORS(app)
 
 @app.route('/api/upload', methods=['POST'])
 def upload_handler():
@@ -203,6 +211,24 @@ def get_job_status(job_id):
         logger.error(f"Error fetching status for {job_id}: {e}", exc_info=True)
         return jsonify({"error": "Internal Server Error"}), 500
 
+@app.route('/api/results/<job_id>', methods=['GET'])
+def get_job_result(job_id):
+    try:
+        from flask import send_file
+        
+        # Determine path
+        # Note: If running from route.py directly, we rely on imports working or env vars
+        # but get_storage_path encapsulates the logic.
+        file_path = get_storage_path(job_id, "result.json")
+        
+        if not os.path.exists(file_path):
+             return jsonify({"error": "Result not found"}), 404
+             
+        return send_file(file_path, mimetype='application/json')
+    except Exception as e:
+        logger.error(f"Error serving result for {job_id}: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
 # Security (Placeholder)
 # To add API Key auth:
 # @app.before_request
@@ -216,4 +242,6 @@ if __name__ == "__main__":
     # Dev server behavior
     port = int(os.environ.get('PORT', 5328)) # Using 5328 default for python backend often used in nextjs
     print(f"Starting dev server on port {port}")
+    if not os.getenv("OPENROUTER_API_KEY"):
+        print("WARNING: OPENROUTER_API_KEY not set. Real AI insights will NOT work.")
     app.run(host='0.0.0.0', port=port, debug=True)

@@ -145,6 +145,8 @@ def process_job(redis_client, job_payload):
                  text_extract = "No content extracted."
              
              result_url = _save_non_tabular_result(job_id, file_name, file_type, text_extract, issues)
+             # Override result_url for local persistence to be web accessible via our API proxy
+             result_url = f"/api/results/{job_id}"
              _complete_job(redis_client, redis_key, result_url)
              return
 
@@ -200,15 +202,34 @@ def process_job(redis_client, job_payload):
             "jobId": job_id,
             "fileInfo": { 
                 "name": file_name or "unknown", 
-                "rows": kpis['rowCount'], 
-                "cols": kpis['colCount'], 
+                "rows": kpis.get('rowCount', 0), 
+                "cols": kpis.get('colCount', 0), 
                 "type": file_type
             },
             "schema": schema,
-            "kpis": kpis, 
+            # Transform KPI dict to list for frontend
+            "kpis": [
+                {"title": "Total Rows", "value": kpis.get('rowCount', 0), "trend": "neutral"},
+                {"title": "Columns", "value": kpis.get('colCount', 0), "trend": "neutral"},
+                {"title": "Missing Values", "value": kpis.get('missingCount', 0), "trend": "down" if kpis.get('missingCount', 0) > 0 else "neutral"},
+                {"title": "Duplicates", "value": kpis.get('duplicateCount', 0), "trend": "down" if kpis.get('duplicateCount', 0) > 0 else "neutral"}
+            ],
             "cleanedPreview": preview,
-            "analystInsights": analyst_insights,
-            "businessSummary": business_summary,
+            "insights": [
+                *[{
+                    "id": i.get("id"),
+                    "title": "Analyst Finding",
+                    "explanation": i.get("text"),
+                    "evidence": json.dumps(i.get("evidence")),
+                    "type": "analyst"
+                } for i in analyst_insights],
+                *[{
+                    "id": f"bs_{idx}",
+                    "title": "Key Takeaway",
+                    "explanation": item,
+                    "type": "business"
+                } for idx, item in enumerate(business_summary)]
+            ],
             "chartSpecs": chart_specs,
             "qualityScore": quality_score,
             "issues": issues, 
@@ -238,6 +259,11 @@ def process_job(redis_client, job_payload):
         else:
             log_info(COMPONENT, "Job completed successfully", job_id=job_id, 
                     step="completed", resultUrl=result_url)
+        
+        # Override result_url for local persistence to be web accessible via our API proxy
+        # In a real cloud deployment with Blob storage, storage.save_file_to_blob would return a valid HTTP URL.
+        # But for local dev with file:// return, we must use our proxy.
+        result_url = f"/api/results/{job_id}"
         
         _complete_job(redis_client, redis_key, result_url)
         increment("jobs_completed_total")
@@ -397,9 +423,15 @@ def _save_non_tabular_result(job_id, file_name, file_type, text_extract, issues)
         "jobId": job_id,
         "fileInfo": { "name": file_name, "type": file_type, "rows": 0, "cols": 0 },
         "schema": [],
-        "kpis": {"rowCount":0, "colCount":0, "missingCount":0},
+        "kpis": [
+            {"title": "Total Rows", "value": 0, "trend": "neutral"},
+            {"title": "Columns", "value": 0, "trend": "neutral"},
+            {"title": "Missing Values", "value": 0, "trend": "neutral"},
+            {"title": "Duplicates", "value": 0, "trend": "neutral"}
+        ],
         "cleanedPreview": [],
         "chartSpecs": [],
+        "insights": [],
         "qualityScore": 0,
         "issues": issues if issues else ["Non-tabular content."],
         "text_extract": text_extract,
