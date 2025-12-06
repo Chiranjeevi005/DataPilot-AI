@@ -1,83 +1,203 @@
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
+import { CheckCircle2, Database, BarChart3, Sparkles, Brain, Zap, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const steps = [
-    "Cleaning Data",
-    "Structuring Schema",
-    "Profiling Columns",
-    "Analyzing Patterns",
-    "Generating Insights"
+    { label: "Cleaning Data", icon: Database },
+    { label: "Structuring Schema", icon: BarChart3 },
+    { label: "Profiling Columns", icon: Sparkles },
+    { label: "Analyzing Patterns", icon: Brain },
+    { label: "Generating Insights", icon: Zap }
 ];
 
 interface LoadingStateProps {
     currentStep: number;
+    onCancel?: () => void;
 }
 
-export default function LoadingState({ currentStep }: LoadingStateProps) {
-    // Determine active step index based on some logic or just passed prop.
-    // The store has currentStep.
+export default function LoadingState({ currentStep, onCancel }: LoadingStateProps) {
+    const [progress, setProgress] = useState(0);
+    const targetProgress = Math.min((currentStep + 1) * 20, 99);
+
+    // Smooth progress animation
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setProgress(prev => {
+                if (prev < targetProgress) {
+                    return Math.min(prev + 1, targetProgress);
+                }
+                return prev;
+            });
+        }, 30);
+        return () => clearInterval(interval);
+    }, [targetProgress]);
 
     return (
-        <div className="flex flex-col items-center justify-center space-y-12">
-            {/* Central Animated Ring */}
-            <div className="relative">
-                <div className="w-64 h-64 rounded-full border-4 border-slate-100 flex items-center justify-center relative">
-                    {/* Spinning Rings */}
-                    <div className="absolute inset-0 rounded-full border-4 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-spin duration-[3s]" />
-                    <div className="absolute inset-4 rounded-full border-4 border-b-secondary border-t-transparent border-l-transparent border-r-transparent animate-spin duration-[4s] direction-reverse" />
+        <div className="w-full min-h-[500px] md:min-h-[600px] flex items-center justify-center p-4 md:p-8 pb-24 md:pb-8">
+            <div className="w-full max-w-2xl mx-auto space-y-8 md:space-y-12">
 
-                    {/* Center Pulse */}
-                    <div className="w-40 h-40 bg-white rounded-full shadow-[0_0_40px_rgba(37,99,235,0.15)] flex items-center justify-center flex-col z-10">
-                        <div className="w-3 h-3 bg-primary rounded-full animate-ping mb-4" />
-                        <span className="text-slate-400 text-xs font-semibold tracking-widest uppercase">Processing</span>
-                        <span className="text-2xl font-bold text-slate-800 mt-1">
-                            {Math.min((currentStep + 1) * 20, 99)}%
-                        </span>
+                {/* Progress Circle */}
+                <div className="flex flex-col items-center justify-center">
+                    <div className="relative w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56">
+                        {/* Background Circle */}
+                        <svg className="w-full h-full -rotate-90" viewBox="0 0 200 200">
+                            <circle
+                                cx="100"
+                                cy="100"
+                                r="90"
+                                fill="none"
+                                stroke="#E2E8F0"
+                                strokeWidth="8"
+                                className="opacity-20"
+                            />
+                            <circle
+                                cx="100"
+                                cy="100"
+                                r="90"
+                                fill="none"
+                                stroke="url(#progressGradient)"
+                                strokeWidth="8"
+                                strokeLinecap="round"
+                                strokeDasharray={`${2 * Math.PI * 90}`}
+                                strokeDashoffset={`${2 * Math.PI * 90 * (1 - progress / 100)}`}
+                                className="transition-all duration-300 ease-out"
+                            />
+                            <defs>
+                                <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stopColor="#2563EB" />
+                                    <stop offset="100%" stopColor="#06B6D4" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+
+                        {/* Center Content */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            {/* Current Step Icon */}
+                            <div className="mb-3 md:mb-4">
+                                {steps[currentStep] && React.createElement(steps[currentStep].icon, {
+                                    className: "w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 text-primary",
+                                    strokeWidth: 1.5
+                                })}
+                            </div>
+
+                            {/* Percentage */}
+                            <div className="text-4xl sm:text-5xl md:text-6xl font-bold bg-gradient-to-br from-primary to-secondary bg-clip-text text-transparent">
+                                {progress}%
+                            </div>
+
+                            {/* Status */}
+                            <div className="text-xs sm:text-sm font-medium text-slate-500 mt-2 tracking-wide uppercase">
+                                Processing
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Current Step Label */}
+                    <div className="mt-6 md:mt-8 text-center">
+                        <p className="text-base sm:text-lg md:text-xl font-semibold text-slate-700">
+                            {steps[currentStep]?.label}
+                        </p>
                     </div>
                 </div>
 
-                {/* Background Glow */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/10 rounded-full blur-3xl -z-10 animate-pulse" />
-            </div>
+                {/* Progress Steps */}
+                <div className="w-full space-y-2 md:space-y-3">
+                    {steps.map((step, index) => {
+                        const isCompleted = index < currentStep;
+                        const isCurrent = index === currentStep;
+                        const Icon = step.icon;
 
-            {/* Steps List */}
-            <div className="w-full max-w-md space-y-4">
-                {steps.map((step, index) => {
-                    const isCompleted = index < currentStep;
-                    const isCurrent = index === currentStep;
+                        return (
+                            <div
+                                key={index}
+                                className={cn(
+                                    "flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-xl md:rounded-2xl transition-all duration-500",
+                                    isCurrent && "bg-white shadow-lg border-2 border-primary/20",
+                                    isCompleted && "bg-emerald-50/50 border border-emerald-200",
+                                    !isCurrent && !isCompleted && "bg-slate-50/50 border border-slate-100 opacity-60"
+                                )}
+                            >
+                                {/* Step Number/Icon */}
+                                <div className={cn(
+                                    "flex-shrink-0 w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl flex items-center justify-center transition-all duration-500",
+                                    isCurrent && "bg-gradient-to-br from-primary to-secondary shadow-md",
+                                    isCompleted && "bg-gradient-to-br from-emerald-500 to-emerald-600",
+                                    !isCurrent && !isCompleted && "bg-slate-200"
+                                )}>
+                                    {isCompleted ? (
+                                        <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6 text-white" strokeWidth={2.5} />
+                                    ) : (
+                                        <Icon className={cn(
+                                            "w-5 h-5 md:w-6 md:h-6",
+                                            isCurrent ? "text-white" : "text-slate-400"
+                                        )} strokeWidth={2} />
+                                    )}
+                                </div>
 
-                    return (
-                        <div key={index} className={cn(
-                            "flex items-center gap-4 p-3 rounded-xl transition-all duration-500",
-                            isCurrent ? "bg-white shadow-soft scale-105 border border-slate-100" : "opacity-50"
-                        )}>
-                            <div className="relative flex items-center justify-center">
-                                {isCompleted ? (
-                                    <CheckCircle2 className="text-emerald-500 w-6 h-6" />
-                                ) : isCurrent ? (
-                                    <Loader2 className="text-primary w-6 h-6 animate-spin" />
-                                ) : (
-                                    <Circle className="text-slate-200 w-6 h-6" />
-                                )}
-                                {index !== steps.length - 1 && (
-                                    <div className={cn(
-                                        "absolute top-8 left-1/2 -translate-x-1/2 w-0.5 h-6",
-                                        isCompleted ? "bg-emerald-500" : "bg-slate-200"
-                                    )} />
-                                )}
+                                {/* Step Label */}
+                                <div className="flex-1 min-w-0">
+                                    <p className={cn(
+                                        "text-sm md:text-base font-semibold truncate transition-colors duration-500",
+                                        isCompleted && "text-emerald-700",
+                                        isCurrent && "text-slate-800",
+                                        !isCurrent && !isCompleted && "text-slate-500"
+                                    )}>
+                                        {step.label}
+                                    </p>
+                                </div>
+
+                                {/* Status Indicator */}
+                                <div className="flex-shrink-0">
+                                    {isCurrent && (
+                                        <div className="flex gap-1">
+                                            {[...Array(3)].map((_, i) => (
+                                                <div
+                                                    key={i}
+                                                    className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"
+                                                    style={{ animationDelay: `${i * 0.15}s` }}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                    {isCompleted && (
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                    )}
+                                </div>
                             </div>
-                            <span className={cn(
-                                "font-medium",
-                                isCompleted ? "text-emerald-700" : isCurrent ? "text-slate-800" : "text-slate-400"
-                            )}>
-                                {step}
-                            </span>
+                        );
+                    })}
+                </div>
+
+                {/* Progress Bar & Cancel Action */}
+                <div className="w-full space-y-8">
+                    <div>
+                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-gradient-to-r from-primary to-secondary rounded-full transition-all duration-500 ease-out"
+                                style={{ width: `${progress}%` }}
+                            />
                         </div>
-                    );
-                })}
+                        <div className="flex justify-between items-center mt-2 text-xs text-slate-500">
+                            <span>Step {currentStep + 1} of {steps.length}</span>
+                            <span>{progress}% Complete</span>
+                        </div>
+                    </div>
+
+                    {/* Cancel Button - Mobile Fixed Bottom, Desktop Inline */}
+                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-slate-200 z-50 md:static md:bg-transparent md:border-0 md:p-0">
+                        <Button
+                            variant="destructive"
+                            className="w-full md:w-auto md:min-w-[200px] h-12 md:h-10 text-base md:text-sm font-medium shadow-lg md:shadow-none rounded-xl md:rounded-lg mx-auto block"
+                            onClick={onCancel}
+                        >
+                            <XCircle className="w-5 h-5 mr-2" />
+                            Cancel Job
+                        </Button>
+                    </div>
+                </div>
             </div>
         </div>
     );

@@ -2,15 +2,22 @@
 
 import React, { useEffect } from 'react';
 import LoadingState from '@/components/loading/LoadingState';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, useSidebarStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import NavBar from '@/components/NavBar';
 import Sidebar from '@/components/Sidebar';
+import { cn } from '@/lib/utils';
 
 export default function LoadingPage() {
     const router = useRouter();
-    const { jobId, jobStatus, updateJobStatus, setResults, currentStep } = useAppStore();
+    const { jobId, jobStatus, updateJobStatus, setResults, currentStep, reset } = useAppStore();
+    const isOpen = useSidebarStore((state) => state.isOpen);
+
+    const handleCancel = () => {
+        reset();
+        router.push('/upload');
+    };
 
     useEffect(() => {
         if (!jobId) {
@@ -57,10 +64,10 @@ export default function LoadingPage() {
 
     return (
         <div className="min-h-screen bg-background font-sans text-slate-900">
-            <Sidebar />
             <NavBar />
-            <main className="h-[calc(100vh-64px)] pt-24 pl-4 pr-4 lg:pl-[300px] flex items-center justify-center">
-                <LoadingState currentStep={currentStep} />
+            <Sidebar />
+            <main className={cn("min-h-screen pt-24 pb-10 flex items-center justify-center transition-all duration-300 ease-in-out", isOpen ? "md:ml-20 lg:ml-72" : "ml-0")}>
+                <LoadingState currentStep={currentStep} onCancel={handleCancel} />
             </main>
         </div>
     );

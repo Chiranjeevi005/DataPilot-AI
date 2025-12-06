@@ -18,9 +18,9 @@ export default function KpiCard({ data }: KpiCardProps) {
         <Card className="border-none shadow-soft hover:shadow-hover transition-shadow duration-300">
             <CardContent className="p-6">
                 <div className="flex flex-col gap-1">
-                    <span className="text-sm font-medium text-slate-500 uppercase tracking-wide">{data.title}</span>
+                    <span className="text-xs md:text-sm font-medium text-slate-500 uppercase tracking-wide">{data.title}</span>
                     <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-bold text-slate-900">{data.value}</span>
+                        <span className="text-2xl md:text-3xl font-bold text-slate-900">{data.value}</span>
                         {data.change && (
                             <div className={cn(
                                 "flex items-center text-xs font-bold px-2 py-0.5 rounded-full",

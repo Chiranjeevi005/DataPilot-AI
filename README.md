@@ -37,6 +37,27 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ---
 
+## Frontend Features
+
+### 🎨 Responsive Design Overhaul
+- **Mobile-First Experience**: Fully optimized for phones, tablets, and desktops using fluid layouts and typography.
+- **Adaptive Navigation**:
+  - **Mobile**: Hamburger menu with slide-over sidebar and simplified header.
+  - **Tablet**: Mini-icon sidebar using tooltips for maximum screen real estate.
+  - **Desktop**: Persistent sidebar with improved data density.
+- **Smart Components**:
+  - **Preview Table**: Automatically switches from scrolling table (Desktop) to card view (Mobile) with expandable details.
+  - **Charts**: Responsive Recharts that adjust axis density, font size, and margins based on viewport.
+  - **File Upload**: Touch-friendly large buttons for mobile, drag-and-drop zone for desktop.
+- **Accessibility**: ARIA labels, focus management, and keyboard navigation support.
+
+### 📊 Interactive Dashboard
+- **Real-Time Progress**: Animated step-by-step loading state with job cancellation.
+- **Dynamic Results**: Interactive charts and KPI cards adapting to data context.
+- **Insight Panel**: AI-generated business insights displayed alongside data.
+
+---
+
 ## Backend (Python)
 
 The backend implementation for DataPilot AI Phase 1 handles file uploads and job queuing.

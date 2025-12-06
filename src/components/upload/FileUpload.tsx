@@ -157,15 +157,21 @@ export default function FileUpload() {
             onDragLeave={onDragLeave}
             onDrop={onDrop}
             className={cn(
-                "relative group cursor-pointer flex flex-col items-center justify-center w-full h-80 rounded-3xl border-2 border-dashed transition-all duration-300 ease-out",
+                "relative group cursor-pointer flex flex-col items-center justify-center w-full min-h-[320px] rounded-3xl border-2 border-dashed transition-all duration-300 ease-out overflow-hidden hover:border-primary/50",
                 isDragActive
                     ? "border-primary bg-primary/5 scale-[1.01] shadow-2xl shadow-primary/10"
-                    : "border-slate-300 bg-slate-50/50 hover:bg-slate-50 hover:border-primary/50"
+                    : "border-slate-300 bg-slate-50/50"
             )}
+            role="button"
+            tabIndex={0}
+            aria-label="Upload file area. Drag and drop or click to browse."
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    document.getElementById('file-upload-input')?.click();
+                }
+            }}
         >
-
-
-            <div className="z-10 flex flex-col items-center space-y-4 text-center p-6">
+            <div className="z-20 flex flex-col items-center space-y-6 text-center p-6 w-full max-w-lg mx-auto">
                 <div className={cn(
                     "w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300",
                     isDragActive ? "bg-white shadow-xl scale-110" : "bg-white shadow-soft"
@@ -173,32 +179,59 @@ export default function FileUpload() {
                     <Upload className={cn("w-10 h-10 transition-colors", isDragActive ? "text-primary" : "text-slate-400")} />
                 </div>
 
-                <div className="space-y-2">
-                    <h3 className="text-2xl font-semibold text-slate-800">
+                <div className="space-y-3 w-full">
+                    <h3 className="text-xl md:text-2xl font-semibold text-slate-800">
                         {isDragActive ? "Drop to upload" : "Upload Data File"}
                     </h3>
-                    <p className="text-slate-500 max-w-sm">
+
+                    {/* Desktop Hint */}
+                    <p className="hidden md:block text-slate-500">
                         Drag & drop your CSV, Excel, or PDF here, or click to browse.
                     </p>
+
+                    {/* Mobile Button - Prominent CTA */}
+                    <div className="md:hidden w-full px-4">
+                        <Button
+                            className="w-full h-12 text-base font-medium shadow-lg shadow-primary/20"
+                            variant="default"
+                        >
+                            Browse Files
+                        </Button>
+                        <p className="mt-3 text-xs text-slate-400">
+                            Supports CSV, Excel, PDF, JSON
+                        </p>
+                    </div>
                 </div>
 
-                <div className="flex gap-4 mt-4 text-slate-400">
-                    <FileText size={24} />
-                    <FileSpreadsheet size={24} />
-                    <FileJson size={24} />
+                {/* Icons - Desktop only to reduce mobile clutter */}
+                <div className="hidden md:flex gap-6 mt-2 text-slate-300">
+                    <div className="flex flex-col items-center gap-1">
+                        <FileText size={24} />
+                        <span className="text-[10px] uppercase font-bold tracking-wider">CSV</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                        <FileSpreadsheet size={24} />
+                        <span className="text-[10px] uppercase font-bold tracking-wider">Excel</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                        <FileJson size={24} />
+                        <span className="text-[10px] uppercase font-bold tracking-wider">JSON</span>
+                    </div>
                 </div>
             </div>
 
             {/* Decorative Grid */}
-            <div className="absolute inset-0 pointer-events-none opacity-[0.03]"
+            <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0"
                 style={{ backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '20px 20px' }}
             />
 
             <input
+                id="file-upload-input"
                 type="file"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-50"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-30"
                 onChange={onFileInput}
-                accept=".csv,.xlsx,.json,.pdf"
+                accept=".csv,.xlsx,.xls,.json,.pdf"
+                title="Upload file"
             />
         </div>
     );
