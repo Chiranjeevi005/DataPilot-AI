@@ -1,0 +1,790 @@
+[
+    {
+        "human_notes": "Example 1: Strong outlier detection with revenue data. Shows proper evidence mapping with aggregates from KPIs and specific row indices. Demonstrates high-severity insight with urgent recommendation.",
+        "input": {
+            "kpis": {
+                "rowCount": 150,
+                "columnCount": 5,
+                "missingCells": 3,
+                "duplicateRows": 0,
+                "numericStats": {
+                    "Revenue": {
+                        "min": 1200,
+                        "max": 185000,
+                        "mean": 8500,
+                        "median": 7200,
+                        "std": 15000
+                    }
+                }
+            },
+            "cleanedPreview": [
+                {
+                    "Date": "2024-01-15",
+                    "Product": "Widget A",
+                    "Revenue": 7200,
+                    "Units": 12
+                },
+                {
+                    "Date": "2024-01-16",
+                    "Product": "Widget B",
+                    "Revenue": 6800,
+                    "Units": 10
+                },
+                {
+                    "Date": "2024-01-17",
+                    "Product": "Widget A",
+                    "Revenue": 185000,
+                    "Units": 250
+                }
+            ],
+            "chartSpecs": [
+                {
+                    "id": "chart_1",
+                    "type": "timeseries",
+                    "x": "Date",
+                    "y": "Revenue"
+                }
+            ]
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Critical revenue outlier detected on 2024-01-17: $185,000 transaction is 12.3x higher than the standard deviation and 25.7x the median. This single transaction represents 21.8% of total dataset revenue. Given the unusual magnitude, this requires immediate verification to rule out data entry error or system glitch.",
+                    "severity": "high",
+                    "category": "outlier",
+                    "evidence": {
+                        "aggregates": {
+                            "Max Revenue": 185000,
+                            "Median Revenue": 7200,
+                            "Std Dev": 15000,
+                            "Outlier Ratio": 12.3
+                        },
+                        "row_indices": [
+                            2
+                        ],
+                        "chart_id": "chart_1"
+                    },
+                    "recommendation": {
+                        "who": "data_engineer",
+                        "what": "Verify source transaction for 2024-01-17 Widget A sale and cross-reference with CRM/ERP system",
+                        "priority": "urgent"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Dataset contains 150 transactions with generally consistent revenue patterns (median $7,200), but one extreme outlier requires immediate attention.",
+                "Data quality is excellent (99.98% complete, zero duplicates), enabling reliable analysis once outlier is validated."
+            ],
+            "visualActions": [
+                {
+                    "chart_id": "chart_1",
+                    "action": "highlight_outliers",
+                    "params": {
+                        "indices": [
+                            2
+                        ],
+                        "reason": "Revenue spike 12.3 std devs above mean"
+                    }
+                }
+            ],
+            "metadata": {
+                "total_insights": 1,
+                "confidence": "high",
+                "data_quality_score": 98,
+                "analysis_timestamp": "2024-12-06T10:30:00Z"
+            }
+        }
+    },
+    {
+        "human_notes": "Example 2: Missing data pattern. Shows how to handle quality issues with medium severity. Demonstrates proper calculation of percentages and actionable recommendation for data engineers.",
+        "input": {
+            "kpis": {
+                "rowCount": 200,
+                "columnCount": 6,
+                "missingCells": 45,
+                "duplicateRows": 0,
+                "numericStats": {}
+            },
+            "schema": [
+                {
+                    "column": "CustomerID",
+                    "type": "string",
+                    "missing": 0,
+                    "unique": 200
+                },
+                {
+                    "column": "Email",
+                    "type": "string",
+                    "missing": 38,
+                    "unique": 162
+                },
+                {
+                    "column": "Phone",
+                    "type": "string",
+                    "missing": 7,
+                    "unique": 193
+                }
+            ],
+            "cleanedPreview": [
+                {
+                    "CustomerID": "C001",
+                    "Email": null,
+                    "Phone": "555-0100"
+                },
+                {
+                    "CustomerID": "C002",
+                    "Email": null,
+                    "Phone": "555-0101"
+                },
+                {
+                    "CustomerID": "C003",
+                    "Email": "c***@example.com",
+                    "Phone": null
+                }
+            ],
+            "chartSpecs": []
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Significant missing data in Email column: 38 out of 200 records (19%) lack email addresses. This impacts marketing campaign reach and customer communication effectiveness. Missing pattern appears non-random, suggesting potential data collection issues during specific time periods or channels.",
+                    "severity": "medium",
+                    "category": "missing_data",
+                    "evidence": {
+                        "aggregates": {
+                            "Total Rows": 200,
+                            "Missing Emails": 38,
+                            "Missing Email %": 19.0,
+                            "Total Missing Cells": 45
+                        },
+                        "row_indices": [
+                            0,
+                            1
+                        ],
+                        "chart_id": null
+                    },
+                    "recommendation": {
+                        "who": "data_engineer",
+                        "what": "Audit data ingestion pipeline for Email field and implement validation at collection point",
+                        "priority": "high"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Customer contact database shows 19% missing email addresses, limiting digital marketing reach to 162 of 200 customers.",
+                "Phone coverage is strong (96.5% complete), providing alternative communication channel while email collection is improved."
+            ],
+            "visualActions": [],
+            "metadata": {
+                "total_insights": 1,
+                "confidence": "high",
+                "data_quality_score": 77,
+                "analysis_timestamp": "2024-12-06T10:31:00Z"
+            }
+        }
+    },
+    {
+        "human_notes": "Example 3: Strong correlation detection. Shows proper handling of numeric relationships and how to reference multiple columns in evidence. Demonstrates data_scientist persona for advanced analytics recommendation.",
+        "input": {
+            "kpis": {
+                "rowCount": 100,
+                "columnCount": 4,
+                "missingCells": 0,
+                "duplicateRows": 0,
+                "numericStats": {
+                    "Marketing_Spend": {
+                        "min": 5000,
+                        "max": 50000,
+                        "mean": 22000,
+                        "median": 20000,
+                        "std": 12000
+                    },
+                    "Revenue": {
+                        "min": 15000,
+                        "max": 180000,
+                        "mean": 78000,
+                        "median": 72000,
+                        "std": 42000
+                    }
+                }
+            },
+            "cleanedPreview": [
+                {
+                    "Month": "2024-01",
+                    "Marketing_Spend": 20000,
+                    "Revenue": 72000,
+                    "Customers": 145
+                },
+                {
+                    "Month": "2024-02",
+                    "Marketing_Spend": 35000,
+                    "Revenue": 125000,
+                    "Customers": 210
+                },
+                {
+                    "Month": "2024-03",
+                    "Marketing_Spend": 15000,
+                    "Revenue": 55000,
+                    "Customers": 98
+                }
+            ],
+            "chartSpecs": [
+                {
+                    "id": "chart_1",
+                    "type": "scatter",
+                    "x": "Marketing_Spend",
+                    "y": "Revenue"
+                }
+            ],
+            "correlations": [
+                {
+                    "col1": "Marketing_Spend",
+                    "col2": "Revenue",
+                    "r": 0.89
+                }
+            ]
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Strong positive correlation (r=0.89) between Marketing Spend and Revenue indicates highly effective marketing ROI. For every $1,000 increase in marketing spend, revenue increases by approximately $3,545 on average. This relationship is consistent across the 100-month dataset, suggesting predictable scaling opportunity.",
+                    "severity": "low",
+                    "category": "correlation",
+                    "evidence": {
+                        "aggregates": {
+                            "Correlation Coefficient": 0.89,
+                            "Marketing Spend Mean": 22000,
+                            "Revenue Mean": 78000,
+                            "Estimated ROI": 3.545
+                        },
+                        "row_indices": [
+                            0,
+                            1,
+                            2
+                        ],
+                        "chart_id": "chart_1"
+                    },
+                    "recommendation": {
+                        "who": "data_scientist",
+                        "what": "Build predictive model to optimize marketing spend allocation and forecast revenue impact",
+                        "priority": "medium"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Marketing spend shows strong predictive power for revenue (89% correlation), with average ROI of $3.55 per dollar spent.",
+                "Consistent relationship across 100 months suggests opportunity to scale marketing investment with confidence in revenue returns."
+            ],
+            "visualActions": [
+                {
+                    "chart_id": "chart_1",
+                    "action": "add_trendline",
+                    "params": {
+                        "indices": [],
+                        "reason": "Visualize linear relationship between marketing spend and revenue"
+                    }
+                }
+            ],
+            "metadata": {
+                "total_insights": 1,
+                "confidence": "high",
+                "data_quality_score": 100,
+                "analysis_timestamp": "2024-12-06T10:32:00Z"
+            }
+        }
+    },
+    {
+        "human_notes": "Example 4: Duplicate detection. Shows how to handle data quality issues with specific row indices and proper severity assessment. Demonstrates data_engineer persona.",
+        "input": {
+            "kpis": {
+                "rowCount": 500,
+                "columnCount": 5,
+                "missingCells": 2,
+                "duplicateRows": 23,
+                "numericStats": {}
+            },
+            "cleanedPreview": [
+                {
+                    "OrderID": "ORD-001",
+                    "Date": "2024-01-15",
+                    "Customer": "Acme Corp",
+                    "Amount": 5000
+                },
+                {
+                    "OrderID": "ORD-001",
+                    "Date": "2024-01-15",
+                    "Customer": "Acme Corp",
+                    "Amount": 5000
+                },
+                {
+                    "OrderID": "ORD-002",
+                    "Date": "2024-01-16",
+                    "Customer": "Beta Inc",
+                    "Amount": 3200
+                }
+            ],
+            "chartSpecs": []
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Duplicate row detection: 23 exact duplicate records found (4.6% of dataset). Example: OrderID 'ORD-001' appears twice with identical values across all fields. Duplicates inflate aggregate metrics and may indicate ETL pipeline issues or double-entry in source systems.",
+                    "severity": "medium",
+                    "category": "duplicate",
+                    "evidence": {
+                        "aggregates": {
+                            "Total Rows": 500,
+                            "Duplicate Rows": 23,
+                            "Duplicate %": 4.6
+                        },
+                        "row_indices": [
+                            0,
+                            1
+                        ],
+                        "chart_id": null
+                    },
+                    "recommendation": {
+                        "who": "data_engineer",
+                        "what": "Implement deduplication logic in ETL pipeline using OrderID as unique key and investigate source system for root cause",
+                        "priority": "high"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Dataset contains 4.6% duplicate records (23 of 500 rows), requiring cleanup before accurate aggregate analysis.",
+                "After deduplication, dataset will have 477 unique orders, reducing potential double-counting in revenue and volume metrics."
+            ],
+            "visualActions": [],
+            "metadata": {
+                "total_insights": 1,
+                "confidence": "high",
+                "data_quality_score": 82,
+                "analysis_timestamp": "2024-12-06T10:33:00Z"
+            }
+        }
+    },
+    {
+        "human_notes": "Example 5: Time series trend detection with seasonality. Shows how to handle date columns and detect patterns. Demonstrates business_user persona for strategic recommendations.",
+        "input": {
+            "kpis": {
+                "rowCount": 365,
+                "columnCount": 3,
+                "missingCells": 0,
+                "duplicateRows": 0,
+                "numericStats": {
+                    "Daily_Sales": {
+                        "min": 1200,
+                        "max": 8500,
+                        "mean": 4200,
+                        "median": 4000,
+                        "std": 1500
+                    }
+                }
+            },
+            "schema": [
+                {
+                    "column": "Date",
+                    "type": "date",
+                    "missing": 0,
+                    "unique": 365
+                }
+            ],
+            "cleanedPreview": [
+                {
+                    "Date": "2024-01-01",
+                    "Day_of_Week": "Monday",
+                    "Daily_Sales": 3200
+                },
+                {
+                    "Date": "2024-01-06",
+                    "Day_of_Week": "Saturday",
+                    "Daily_Sales": 7800
+                },
+                {
+                    "Date": "2024-01-07",
+                    "Day_of_Week": "Sunday",
+                    "Daily_Sales": 8200
+                }
+            ],
+            "chartSpecs": [
+                {
+                    "id": "chart_1",
+                    "type": "timeseries",
+                    "x": "Date",
+                    "y": "Daily_Sales"
+                }
+            ]
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Clear weekly seasonality pattern detected: Weekend sales (Saturday-Sunday) average $8,050, which is 92% higher than weekday average of $4,200. This pattern is consistent across all 52 weeks in the dataset. Weekend days represent 28.6% of time but generate 45.8% of total annual revenue.",
+                    "severity": "low",
+                    "category": "seasonality",
+                    "evidence": {
+                        "aggregates": {
+                            "Weekend Avg Sales": 8050,
+                            "Weekday Avg Sales": 4200,
+                            "Weekend Premium %": 92,
+                            "Weekend Revenue Share %": 45.8
+                        },
+                        "row_indices": [
+                            5,
+                            6
+                        ],
+                        "chart_id": "chart_1"
+                    },
+                    "recommendation": {
+                        "who": "business_user",
+                        "what": "Optimize staffing and inventory levels for weekend peaks; consider weekend-specific promotions to maximize high-traffic periods",
+                        "priority": "medium"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Strong weekly seasonality with weekend sales 92% higher than weekdays, indicating consumer-driven purchase patterns.",
+                "Weekends generate 45.8% of annual revenue despite being only 28.6% of days, presenting clear optimization opportunity."
+            ],
+            "visualActions": [
+                {
+                    "chart_id": "chart_1",
+                    "action": "highlight_outliers",
+                    "params": {
+                        "indices": [
+                            5,
+                            6
+                        ],
+                        "reason": "Weekend peak sales pattern"
+                    }
+                }
+            ],
+            "metadata": {
+                "total_insights": 1,
+                "confidence": "high",
+                "data_quality_score": 100,
+                "analysis_timestamp": "2024-12-06T10:34:00Z"
+            }
+        }
+    },
+    {
+        "human_notes": "Example 6: Category imbalance detection. Shows how to handle categorical distributions and identify skewed data. Demonstrates analyst persona for investigation recommendations.",
+        "input": {
+            "kpis": {
+                "rowCount": 1000,
+                "columnCount": 4,
+                "missingCells": 5,
+                "duplicateRows": 0,
+                "numericStats": {}
+            },
+            "schema": [
+                {
+                    "column": "Region",
+                    "type": "string",
+                    "missing": 0,
+                    "unique": 5
+                }
+            ],
+            "cleanedPreview": [
+                {
+                    "Region": "North",
+                    "Sales": 5000,
+                    "Customers": 45
+                },
+                {
+                    "Region": "North",
+                    "Sales": 5200,
+                    "Customers": 48
+                },
+                {
+                    "Region": "South",
+                    "Sales": 800,
+                    "Customers": 7
+                }
+            ],
+            "chartSpecs": [
+                {
+                    "id": "chart_1",
+                    "type": "category_count",
+                    "column": "Region"
+                }
+            ],
+            "categoryDistribution": {
+                "Region": {
+                    "North": 780,
+                    "South": 85,
+                    "East": 70,
+                    "West": 55,
+                    "Central": 10
+                }
+            }
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Severe category imbalance in Region distribution: 'North' represents 78% of all records (780 of 1,000), while 'Central' has only 1%. This imbalance may indicate geographic bias in data collection, uneven market presence, or sampling issues. Statistical analyses and ML models will be heavily skewed toward North region patterns.",
+                    "severity": "medium",
+                    "category": "distribution",
+                    "evidence": {
+                        "aggregates": {
+                            "Total Records": 1000,
+                            "North Count": 780,
+                            "North %": 78.0,
+                            "Central Count": 10,
+                            "Central %": 1.0
+                        },
+                        "row_indices": [
+                            0,
+                            1
+                        ],
+                        "chart_id": "chart_1"
+                    },
+                    "recommendation": {
+                        "who": "analyst",
+                        "what": "Investigate whether imbalance reflects true business distribution or data collection bias; consider stratified sampling for balanced analysis",
+                        "priority": "medium"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Geographic distribution is heavily skewed toward North region (78% of records), limiting insights into other markets.",
+                "Underrepresented regions (Central: 1%, West: 5.5%) may require targeted data collection efforts for comprehensive analysis."
+            ],
+            "visualActions": [
+                {
+                    "chart_id": "chart_1",
+                    "action": "show_correlation",
+                    "params": {
+                        "indices": [],
+                        "reason": "Highlight category imbalance in regional distribution"
+                    }
+                }
+            ],
+            "metadata": {
+                "total_insights": 1,
+                "confidence": "medium",
+                "data_quality_score": 75,
+                "analysis_timestamp": "2024-12-06T10:35:00Z"
+            }
+        }
+    },
+    {
+        "human_notes": "Example 7: Borderline case with ambiguous date formats. Shows how to handle uncertainty and provide conditional recommendations. Demonstrates proper use of 'low' confidence when data quality is questionable.",
+        "input": {
+            "kpis": {
+                "rowCount": 50,
+                "columnCount": 3,
+                "missingCells": 8,
+                "duplicateRows": 0,
+                "numericStats": {}
+            },
+            "schema": [
+                {
+                    "column": "Transaction_Date",
+                    "type": "string",
+                    "missing": 8,
+                    "unique": 42
+                }
+            ],
+            "cleanedPreview": [
+                {
+                    "Transaction_Date": "01/02/2024",
+                    "Amount": 1200
+                },
+                {
+                    "Transaction_Date": "02/01/2024",
+                    "Amount": 1500
+                },
+                {
+                    "Transaction_Date": null,
+                    "Amount": 1100
+                }
+            ],
+            "chartSpecs": []
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Date format ambiguity detected: Transaction_Date column contains values like '01/02/2024' which could be interpreted as either MM/DD/YYYY or DD/MM/YYYY format. Additionally, 16% of records (8 of 50) have missing dates. This ambiguity prevents reliable time-series analysis and may lead to incorrect temporal ordering.",
+                    "severity": "high",
+                    "category": "quality",
+                    "evidence": {
+                        "aggregates": {
+                            "Total Rows": 50,
+                            "Missing Dates": 8,
+                            "Missing Date %": 16.0,
+                            "Unique Dates": 42
+                        },
+                        "row_indices": [
+                            0,
+                            1,
+                            2
+                        ],
+                        "chart_id": null
+                    },
+                    "recommendation": {
+                        "who": "data_engineer",
+                        "what": "Standardize date format to ISO 8601 (YYYY-MM-DD) in source system and backfill missing dates from transaction logs",
+                        "priority": "urgent"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Date format inconsistency and 16% missing dates prevent reliable temporal analysis of transaction patterns.",
+                "Immediate standardization required before any time-based insights or trend analysis can be performed with confidence."
+            ],
+            "visualActions": [],
+            "metadata": {
+                "total_insights": 1,
+                "confidence": "low",
+                "data_quality_score": 55,
+                "analysis_timestamp": "2024-12-06T10:36:00Z"
+            }
+        }
+    },
+    {
+        "human_notes": "Example 8: Multi-insight scenario showing trend reversal. Demonstrates how to create multiple related insights and proper use of visualActions with specific parameters.",
+        "input": {
+            "kpis": {
+                "rowCount": 24,
+                "columnCount": 4,
+                "missingCells": 0,
+                "duplicateRows": 0,
+                "numericStats": {
+                    "Monthly_Revenue": {
+                        "min": 45000,
+                        "max": 125000,
+                        "mean": 82000,
+                        "median": 80000,
+                        "std": 22000
+                    }
+                }
+            },
+            "cleanedPreview": [
+                {
+                    "Month": "2023-01",
+                    "Monthly_Revenue": 95000,
+                    "Growth_Rate": 0.08
+                },
+                {
+                    "Month": "2023-06",
+                    "Monthly_Revenue": 125000,
+                    "Growth_Rate": 0.12
+                },
+                {
+                    "Month": "2023-07",
+                    "Monthly_Revenue": 118000,
+                    "Growth_Rate": -0.06
+                },
+                {
+                    "Month": "2023-12",
+                    "Monthly_Revenue": 72000,
+                    "Growth_Rate": -0.15
+                }
+            ],
+            "chartSpecs": [
+                {
+                    "id": "chart_1",
+                    "type": "timeseries",
+                    "x": "Month",
+                    "y": "Monthly_Revenue"
+                }
+            ]
+        },
+        "output": {
+            "analystInsights": [
+                {
+                    "id": "i1",
+                    "text": "Trend reversal detected in Q3 2023: After 6 months of consistent growth (avg +9.5% monthly), revenue peaked at $125,000 in June 2023 then declined for 6 consecutive months, ending at $72,000 in December (42% drop from peak). This represents a critical inflection point requiring immediate investigation.",
+                    "severity": "high",
+                    "category": "trend",
+                    "evidence": {
+                        "aggregates": {
+                            "Peak Revenue": 125000,
+                            "Current Revenue": 72000,
+                            "Peak to Current Drop %": 42.4,
+                            "Consecutive Decline Months": 6
+                        },
+                        "row_indices": [
+                            5,
+                            6,
+                            11
+                        ],
+                        "chart_id": "chart_1"
+                    },
+                    "recommendation": {
+                        "who": "business_user",
+                        "what": "Conduct root cause analysis of Q3 2023 revenue decline; investigate market conditions, competitive actions, and internal operational changes",
+                        "priority": "urgent"
+                    }
+                },
+                {
+                    "id": "i2",
+                    "text": "Accelerating decline velocity: Monthly decline rate increased from -6% in July to -15% in December, indicating worsening trend momentum. If this acceleration continues, revenue could fall below $60,000 by Q1 2024, threatening business viability.",
+                    "severity": "high",
+                    "category": "trend",
+                    "evidence": {
+                        "aggregates": {
+                            "July Decline %": -6.0,
+                            "December Decline %": -15.0,
+                            "Decline Acceleration": -9.0
+                        },
+                        "row_indices": [
+                            6,
+                            11
+                        ],
+                        "chart_id": "chart_1"
+                    },
+                    "recommendation": {
+                        "who": "business_user",
+                        "what": "Implement immediate revenue stabilization initiatives and develop contingency plan for continued decline scenario",
+                        "priority": "urgent"
+                    }
+                }
+            ],
+            "businessSummary": [
+                "Revenue trend reversed sharply in Q3 2023, declining 42% from peak of $125K to $72K over 6 months with accelerating decline rate.",
+                "Urgent intervention required to stabilize revenue and prevent further deterioration; root cause analysis should examine Q3 2023 market and operational factors."
+            ],
+            "visualActions": [
+                {
+                    "chart_id": "chart_1",
+                    "action": "add_trendline",
+                    "params": {
+                        "indices": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                        ],
+                        "reason": "Show growth trend before reversal"
+                    }
+                },
+                {
+                    "chart_id": "chart_1",
+                    "action": "highlight_outliers",
+                    "params": {
+                        "indices": [
+                            5
+                        ],
+                        "reason": "Peak revenue before decline"
+                    }
+                }
+            ],
+            "metadata": {
+                "total_insights": 2,
+                "confidence": "high",
+                "data_quality_score": 100,
+                "analysis_timestamp": "2024-12-06T10:37:00Z"
+            }
+        }
+    }
+]
