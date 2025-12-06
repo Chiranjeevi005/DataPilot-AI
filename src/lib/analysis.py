@@ -231,14 +231,31 @@ def generate_cleaned_preview(df: pd.DataFrame, n=20):
     # Take first n rows
     preview_df = df.head(n).copy()
     
-    # Standardize dates and handle NaN
+    # Gap 1: Strict Date Normalization
     for col in preview_df.columns:
-        if pd.api.types.is_datetime64_any_dtype(preview_df[col]):
-            # Use format to get string, invalid parsed dates become NaT/NaN
+        # Check if it looks like a date/datetime column
+        # We rely on previous inference or checking dtypes
+        is_date = pd.api.types.is_datetime64_any_dtype(preview_df[col])
+        if not is_date:
+            # Check if object col is actually date-like
+            # Heuristic: try convert, if >50% valid, treat as date
+            try:
+                converted = pd.to_datetime(preview_df[col], errors='coerce')
+                valid_count = converted.notnull().sum()
+                if len(preview_df) > 0 and (valid_count / len(preview_df)) > 0.5:
+                    preview_df[col] = converted
+                    is_date = True
+            except:
+                pass
+
+        if is_date:
+            # Normalize to YYYY-MM-DD
+            # NaT becomes NaN which handles normally later
+            # Force conversion to ensure .dt accessor works
+            preview_df[col] = pd.to_datetime(preview_df[col], errors='coerce')
             preview_df[col] = preview_df[col].dt.strftime('%Y-%m-%d')
 
     # Convert to object to allow replacement with None (JSON null)
-    # This prevents pandas from forcing None back to NaN in numeric columns
     preview_df = preview_df.astype(object)
     
     # Convert NaNs to None (null in JSON)

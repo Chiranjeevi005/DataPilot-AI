@@ -8,10 +8,10 @@ from datetime import datetime
 
 # Adjust import based on how the worker is run. 
 try:
-    from lib import storage, analysis, pdf_extractor, json_normalize_helper
+    from lib import storage, analysis, pdf_extractor, json_normalize_helper, llm_client
 except ImportError:
     # Fallback for relative imports if needed
-    from ..lib import storage, analysis, pdf_extractor, json_normalize_helper
+    from ..lib import storage, analysis, pdf_extractor, json_normalize_helper, llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +119,26 @@ def process_job(redis_client, job_payload):
         chart_specs = analysis.generate_chart_specs(df, schema)
         quality_score = analysis.compute_quality_score(df, schema, kpis)
         
+        # Phase 6: LLM Insights
+        logger.info("Generating LLM insights...")
+        insights_data = llm_client.generate_insights(
+            file_info={"name": file_name, "type": file_type}, 
+            schema=schema, 
+            kpis=kpis, 
+            preview=preview
+        )
+        
+        # Gap 2: Flattened Structure (Gap Fixing)
+        # insights_data is now normalized by llm_client to contain:
+        # { "analystInsights": [...], "businessSummary": [...], "issues": [...] }
+        
+        analyst_insights = insights_data.get("analystInsights", [])
+        business_summary = insights_data.get("businessSummary", [])
+        
+        if "issues" in insights_data:
+             for issue in insights_data["issues"]:
+                  issues.append(f"LLM: {issue}")
+
         # 5. Construct Result
         result_data = {
             "jobId": job_id,
@@ -129,12 +149,13 @@ def process_job(redis_client, job_payload):
                 "type": file_type
             },
             "schema": schema,
-            "kpis": kpis, # Contains rowCount, colCount, missingCount, numDuplicates, numericStats
+            "kpis": kpis, 
             "cleanedPreview": preview,
+            "analystInsights": analyst_insights,
+            "businessSummary": business_summary,
             "chartSpecs": chart_specs,
             "qualityScore": quality_score,
-            "qualityScore": quality_score,
-            "issues": issues, # Add specific issues if we tracked them
+            "issues": issues, 
             "processedAt": datetime.utcnow().isoformat() + "Z"
         }
         

@@ -196,3 +196,35 @@ Run the automated test which uploads a messy CSV and validates the output:
 ```bash
 ./scripts/test_phase4.sh
 ```
+
+---
+
+## Backend Phase 6: LLM Insights (Gemini)
+
+The Phase 6 worker integration adds automated AI business insights using Gemini.
+
+### Setup
+1. **API Key**: Set `GEMINI_API_KEY` in `.env`.
+   - Get key from [Google AI Studio](https://aistudio.google.com/).
+2. **Model**: Optional `GEMINI_MODEL` (default: `gemini-1.5-flash`).
+
+### Features
+- **Business Summary**: 3-5 high-level insights derived from EDA (KPIs, Schema, Preview).
+- **Evidence**: Structured citations (aggregates or specific row examples) backing the insights.
+- **Fail-Safe**:
+  - **Retry Logic**: Automatically retries on JSON parsing errors.
+  - **Fallback**: Returns a graceful "Analysis unavailable" message if API fails, ensuring the job still completes.
+  - **Mock Mode**: Set `LLM_MOCK=true` to simulate LLM responses for local dev/testing without costs.
+
+### Reprocessing
+To re-run the LLM analysis on an *already processed* job (e.g. to iterate on prompts):
+```bash
+./scripts/reprocess_job.sh <jobId>
+```
+The script reads the existing `result.json`, re-sends context to LLM, and updates the insights in-place.
+
+### Replacing Gemini
+To use a different provider (e.g. OpenAI, Anthropic):
+1. Modify `src/lib/llm_client.py`.
+2. Update the `generate_insights` function to call the new provider.
+3. Ensure the prompt logic remains consistent (Inputs: Schema/KPIs, Output: JSON).
