@@ -12,7 +12,7 @@ yarn dev
 pnpm dev
 # or
 bun dev
-```
+```                                                                                    
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
@@ -90,7 +90,9 @@ Run the provided test script (requires bash/curl):
 Or manually:
 ```bash
 # Upload CSV
+# Note: On Windows PowerShell, use 'curl.exe' instead of 'curl'
 curl -F "file=@./dev-samples/sales_demo.csv" http://localhost:5328/api/upload
+
 ```
 
 ### File Storage & Inspection
@@ -103,4 +105,40 @@ curl -F "file=@./dev-samples/sales_demo.csv" http://localhost:5328/api/upload
 - **POST /api/upload**
     - **Multipart**: `file=@path/to/file.csv`
     - **JSON**: `{"fileUrl": "...", "filename": "..."}`
-    - Returns: `{"jobId": "job_...", "status": "submitted"}`
+    - **Returns**: `{"jobId": "job_...", "status": "submitted"}`
+
+---
+
+## Backend Worker (Phase 3)
+
+The specific worker process handles `data_jobs` from Redis, processing them (simulation) and generating results.
+
+### Running the Worker
+
+The worker listens to Redis queue `data_jobs`.
+
+```bash
+# Using helper script
+./scripts/run_worker.sh
+
+# Or manually
+export PYTHONPATH=$PYTHONPATH:$(pwd)/src
+python src/worker.py
+```
+
+### Testing the Worker
+
+1. Start Redis.
+2. Start the Upload API (see above) if performing full flow.
+3. Start the Worker (in a separate terminal).
+4. Run the test flow:
+   ```bash
+   ./scripts/test_worker_flow.sh
+   ```
+
+### Worker Configuration
+
+The worker uses the following `.env` settings:
+- `SIMULATED_WORK_SECONDS`: Duration of simulated processing (default: 3).
+- `WORKER_POLL_INTERVAL`: Redis polling interval in seconds (default: 1).
+- `RESULTS_DIR`: Directory to store result JSONs if not using Blob (default: `/tmp/datapilot/results` or relative to project on Windows).

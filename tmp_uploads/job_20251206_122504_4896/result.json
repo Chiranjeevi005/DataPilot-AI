@@ -1,0 +1,38 @@
+{
+  "jobId": "job_20251206_122504_4896",
+  "fileInfo": {
+    "name": "sales_demo.csv",
+    "rows": 100,
+    "cols": 10,
+    "type": "csv"
+  },
+  "kpis": [
+    {
+      "name": "TotalRows",
+      "value": 100
+    }
+  ],
+  "chartSpecs": [
+    {
+      "id": "c1",
+      "type": "line",
+      "title": "Demo",
+      "data": [
+        {
+          "x": 1,
+          "y": 2
+        }
+      ],
+      "xKey": "x",
+      "yKey": "y"
+    }
+  ],
+  "analystInsights": [
+    {
+      "id": "i1",
+      "text": "Demo insight",
+      "evidence": {}
+    }
+  ],
+  "processedAt": "2025-12-06T07:00:09.046598Z"
+}
