@@ -142,3 +142,57 @@ The worker uses the following `.env` settings:
 - `SIMULATED_WORK_SECONDS`: Duration of simulated processing (default: 3).
 - `WORKER_POLL_INTERVAL`: Redis polling interval in seconds (default: 1).
 - `RESULTS_DIR`: Directory to store result JSONs if not using Blob (default: `/tmp/datapilot/results` or relative to project on Windows).
+
+---
+
+## Backend Phase 4: Data Processing & EDA
+
+The Phase 4 worker implements real data processing for CSV, XLSX, and JSON files.
+
+### Features
+- **File Parsing**: Robust parsing with encoding fallback (UTF-8/Latin-1) and error handling.
+- **Schema Inference**: Detects types (date, numeric, categorical, etc.), missing counts, and unique counts.
+- **KPIs**: Row/Col counts, duplicates, and numeric stats (sum, mean, max, etc.).
+- **Smart Charts**: Automatically generates specs for time-series (Line) and categorical distributions (Bar).
+- **Quality Score**: Heuristic score (0-100) based on missingness, duplicates, and consistency.
+
+### Result JSON Structure
+The worker attempts to generate a `result.json` saved to storage:
+
+```json
+{
+  "jobId": "job_...",
+  "fileInfo": { "name": "data.csv", "rows": 100, "cols": 5, "type": "csv" },
+  "schema": [
+    { "name": "Date", "inferred_type": "datetime", "missing_count": 0, "unique_count": 9, "sample_values": ["2023-01-01"] }
+  ],
+  "kpis": {
+    "rowCount": 100,
+    "colCount": 5,
+    "missingCount": 2,
+    "numDuplicates": 0,
+    "numericStats": { "Revenue": { "sum": 50000.0, "mean": 500.0, ... } }
+  },
+  "cleanedPreview": [
+    { "Date": "2023-01-01", "Revenue": 500 }
+  ],
+  "chartSpecs": [
+    { "id": "chart_timeseries_1", "type": "line", "xKey": "date", "yKey": "value", "data": [...] }
+  ],
+  "qualityScore": 85,
+  "processedAt": "2025-12-06T..."
+}
+```
+
+### Quality Score Logic
+- **Base**: 100
+- **Penalties**:
+  - Missing Values: - (Percent Missing * 30), capped at 30 points.
+  - Duplicates: -10 points if > 1% rows are duplicates.
+- **Result**: `max(0, 100 - penalties)`
+
+### Testing Phase 4
+Run the automated test which uploads a messy CSV and validates the output:
+```bash
+./scripts/test_phase4.sh
+```

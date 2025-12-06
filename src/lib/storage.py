@@ -2,6 +2,10 @@ import os
 import logging
 import shutil
 from pathlib import Path
+import io
+import urllib.parse
+import urllib.request
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -66,3 +70,36 @@ def save_file_to_tmp(file_stream, filename: str, job_id: str) -> str:
     except Exception as e:
         logger.error(f"Failed to save file for job {job_id}: {e}")
         raise
+
+def ensure_local_path(file_url: str) -> str:
+    """
+    Ensures the file at file_url is available locally. 
+    If it's a file:// URL, returns the local path.
+    If it's http(s)://, downloads to a temporary file and returns that path.
+    """
+    logger.info(f"Ensuring local path for {file_url}")
+    parsed = urllib.parse.urlparse(file_url)
+    
+    if parsed.scheme == 'file':
+        file_path = urllib.request.url2pathname(parsed.path)
+        # Fix Windows path issues if necessary
+        if os.name == 'nt' and file_path.startswith('\\') and not os.path.exists(file_path) and os.path.exists(file_path[1:]):
+             file_path = file_path[1:]
+        return file_path
+        
+    elif parsed.scheme in ('http', 'https'):
+        # Download to a temp file
+        # We use standard tempfile logic or our storage tmp
+        import tempfile
+        filename = os.path.basename(parsed.path) or "downloaded_file"
+        
+        # Use our temp storage
+        target_dir = os.path.join(os.getenv('LOCAL_STORAGE_ROOT') or 'tmp_uploads', 'downloads')
+        os.makedirs(target_dir, exist_ok=True)
+        target_path = os.path.join(target_dir, f"{int(datetime.now().timestamp())}_{filename}")
+        
+        logger.info(f"Downloading {file_url} to {target_path}")
+        urllib.request.urlretrieve(file_url, target_path)
+        return target_path
+    else:
+        raise ValueError(f"Unsupported scheme: {parsed.scheme}")

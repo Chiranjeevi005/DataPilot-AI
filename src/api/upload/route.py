@@ -138,6 +138,24 @@ def upload_handler():
         logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify({"error": "Internal Server Error"}), 500
 
+@app.route('/api/job-status/<job_id>', methods=['GET'])
+def get_job_status(job_id):
+    try:
+        r = get_redis_client()
+        job_key = f"job:{job_id}"
+        data_str = r.get(job_key)
+        
+        if not data_str:
+            return jsonify({"error": "Job not found"}), 404
+            
+        data = json.loads(data_str)
+        # return full data
+        return jsonify(data), 200
+        
+    except Exception as e:
+        logger.error(f"Error fetching status for {job_id}: {e}", exc_info=True)
+        return jsonify({"error": "Internal Server Error"}), 500
+
 # Security (Placeholder)
 # To add API Key auth:
 # @app.before_request
