@@ -124,10 +124,14 @@ def infer_column_type(series: pd.Series):
         pass
         
     # 4. Check categorical vs text
-    unique_count = series.nunique()
-    total_count = len(series)
-    if unique_count / total_count < 0.5 and unique_count < 100:
-         return 'categorical'
+    try:
+        unique_count = series.nunique()
+        total_count = len(series)
+        if unique_count / total_count < 0.5 and unique_count < 100:
+             return 'categorical'
+    except TypeError:
+        # Unhashable type (list/dict)
+        return 'complex'
          
     return 'text'
 
@@ -146,7 +150,12 @@ def generate_schema(df: pd.DataFrame):
     for col in df.columns:
         col_type = infer_column_type(df[col])
         missing = int(df[col].isnull().sum())
-        unique = int(df[col].nunique())
+        try:
+             unique = int(df[col].nunique())
+        except TypeError:
+             # handle unhashable
+             unique = int(df[col].astype(str).nunique())
+             
         samples = get_sample_values(df[col])
         
         # Convert samples to JSON serializable types
@@ -177,7 +186,15 @@ def compute_kpis(df: pd.DataFrame, schema: list):
     _, total_missing = compute_missing_stats(df)
     
     # Duplicates
-    num_duplicates = df.duplicated().sum()
+    try:
+        num_duplicates = df.duplicated().sum()
+    except TypeError:
+        # If unhashable types present (lists/dicts), assume 0 duplicates or try string conversion
+        # Use str conversion for robustness
+        try:
+            num_duplicates = df.astype(str).duplicated().sum()
+        except:
+            num_duplicates = 0
     
     # Numeric stats for top 3 numeric cols
     numeric_cols = [c['name'] for c in schema if c['inferred_type'] in ('numeric', 'integer')]
@@ -210,6 +227,7 @@ def compute_kpis(df: pd.DataFrame, schema: list):
         "numericStats": stats
     }
 
+def generate_cleaned_preview(df: pd.DataFrame, n=20):
     # Take first n rows
     preview_df = df.head(n).copy()
     

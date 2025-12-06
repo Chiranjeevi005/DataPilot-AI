@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "generated_at": "2023-10-10",
+    "source": "system"
+  },
+  "customers": [
+    {
+      "id": 1,
+      "name": "Alice",
+      "contacts": [
+        {
+          "type": "email",
+          "val": "a@a.com"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Bob",
+      "contacts": []
+    },
+    {
+      "id": 3,
+      "name": "Charlie",
+      "orders": 5
+    },
+    {
+      "id": 4,
+      "name": "Dave",
+      "active": true
+    }
+  ]
+}

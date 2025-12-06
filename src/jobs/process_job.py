@@ -8,10 +8,10 @@ from datetime import datetime
 
 # Adjust import based on how the worker is run. 
 try:
-    from lib import storage, analysis
+    from lib import storage, analysis, pdf_extractor, json_normalize_helper
 except ImportError:
     # Fallback for relative imports if needed
-    from ..lib import storage, analysis
+    from ..lib import storage, analysis, pdf_extractor, json_normalize_helper
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +44,72 @@ def process_job(redis_client, job_payload):
         file_type = analysis.detect_file_type(file_name or local_path)
         logger.info(f"Detected file type: {file_type}")
         
+        df = None
+        text_extract = None
+        issues = []
+        
         try:
-            df = analysis.parse_dataset(local_path, file_type)
-        except ValueError as ve:
-            # Check for non-tabular JSON issue
-            if file_type == 'json' and "JSON must be a list" in str(ve):
-                # Handle non-tabular JSON
-                result_url = _save_non_tabular_result(job_id, file_name, local_path)
-                _complete_job(redis_client, redis_key, result_url)
-                return
-            raise ve
+            if file_type == 'pdf':
+                # PDF Extraction
+                candidate_dfs = pdf_extractor.extract_tables_from_pdf(local_path)
+                if candidate_dfs:
+                     # Pick best
+                     best_df = max(candidate_dfs, key=pdf_extractor.score_table)
+                     score = pdf_extractor.score_table(best_df)
+                     logger.info(f"Selected best PDF table with score {score}")
+                     if score > 0:
+                         df = best_df
+                     else:
+                         logger.info("PDF table found but score is 0. Treating as non-tabular.")
+                
+                if df is None:
+                    # Text fallback
+                    text_extract = pdf_extractor.extract_text_from_pdf(local_path)
+                    issues.append({"type":"non_tabular_pdf","message":"No high-quality tables detected; text_extract provided."})
+
+            elif file_type == 'json':
+                # JSON Normalization
+                with open(local_path, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+                
+                df = json_normalize_helper.normalize_json_to_df(json_data)
+                
+                if df is None:
+                    # Fallback sample
+                    # Re-read or just use json_data
+                    sample_str = json.dumps(json_data, indent=2)
+                    text_extract = sample_str[:1000]
+                    issues.append("Non-tabular JSON content detected. Could not parse into rows.")
             
+            else:
+                # Standard Parsing (CSV, XLSX, basic JSON fallback)
+                try:
+                    df = analysis.parse_dataset(local_path, file_type)
+                except ValueError as ve:
+                    if file_type == 'json' and "JSON must be a list" in str(ve):
+                         # Should have been handled above if we trust our new helper, 
+                         # but analysis.parse_dataset isn't used for JSON if we enter the block above?
+                         # Wait, if I changed the logic to use json_normalize_helper for 'json', 
+                         # then analysis.parse_dataset won't be called for 'json' unless I fallback?
+                         # The 'if file_type == 'json'' block above handles it.
+                         # exact match logic.
+                         pass
+                    raise ve
+
+        except Exception as e:
+            logger.error(f"Error during parsing/extraction: {e}")
+            # If we haven't set text_extract, maybe set error as issue
+            issues.append(f"Parsing error: {str(e)}")
+            
+        # Check if we have a DataFrame to process
+        if df is None or df.empty:
+             if text_extract is None:
+                 text_extract = "No content extracted."
+             
+             result_url = _save_non_tabular_result(job_id, file_name, file_type, text_extract, issues)
+             _complete_job(redis_client, redis_key, result_url)
+             return
+
         logger.info(f"Parsed DataFrame: {df.shape}")
         
         # 4. Analysis
@@ -78,7 +133,8 @@ def process_job(redis_client, job_payload):
             "cleanedPreview": preview,
             "chartSpecs": chart_specs,
             "qualityScore": quality_score,
-            "issues": [], # Add specific issues if we tracked them
+            "qualityScore": quality_score,
+            "issues": issues, # Add specific issues if we tracked them
             "processedAt": datetime.utcnow().isoformat() + "Z"
         }
         
@@ -129,24 +185,18 @@ def _get_job_data(redis_client, key):
         return json.loads(data_str)
     return {}
 
-def _save_non_tabular_result(job_id, file_name, local_path):
-    # Read sample
-    try:
-        with open(local_path, 'r', encoding='utf-8') as f:
-            sample = f.read(1000)
-    except:
-        sample = "Could not read file."
-        
+def _save_non_tabular_result(job_id, file_name, file_type, text_extract, issues):
+    # Construct result for non-tabular
     result_data = {
         "jobId": job_id,
-        "fileInfo": { "name": file_name, "type": "json", "rows": 0, "cols": 0 },
+        "fileInfo": { "name": file_name, "type": file_type, "rows": 0, "cols": 0 },
         "schema": [],
         "kpis": {"rowCount":0, "colCount":0, "missingCount":0},
         "cleanedPreview": [],
         "chartSpecs": [],
         "qualityScore": 0,
-        "issues": ["Non-tabular JSON content detected. Could not parse into rows."],
-        "text_extract": sample,
+        "issues": issues if issues else ["Non-tabular content."],
+        "text_extract": text_extract,
         "processedAt": datetime.utcnow().isoformat() + "Z"
     }
     
