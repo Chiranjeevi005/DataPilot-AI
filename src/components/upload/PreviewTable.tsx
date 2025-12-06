@@ -29,11 +29,20 @@ export default function PreviewTable() {
                         <tbody className="divide-y divide-slate-100">
                             {previewRows.map((row, i) => (
                                 <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                                    {previewColumns.map((col, j) => (
-                                        <td key={j} className="px-6 py-3 text-slate-600 whitespace-nowrap max-w-[200px] truncate">
-                                            {row[col]}
-                                        </td>
-                                    ))}
+                                    {previewColumns.map((col, j) => {
+                                        const value = row[col];
+                                        // Handle nested objects and arrays
+                                        const displayValue =
+                                            value === null || value === undefined ? '' :
+                                                typeof value === 'object' ? JSON.stringify(value) :
+                                                    String(value);
+
+                                        return (
+                                            <td key={j} className="px-6 py-3 text-slate-600 whitespace-nowrap max-w-[200px] truncate" title={displayValue}>
+                                                {displayValue}
+                                            </td>
+                                        );
+                                    })}
                                 </tr>
                             ))}
                         </tbody>

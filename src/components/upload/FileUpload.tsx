@@ -32,9 +32,6 @@ export default function FileUpload() {
                     setPreview(
                         results.data,
                         results.meta.fields || [],
-                        // We don't know total rows without streaming, but for preview 10 is enough.
-                        // For total rows, we might need a full parse or just estimate. 
-                        // Let's set 0 for now or results.data.length if small.
                         0
                     );
                 }
@@ -56,6 +53,77 @@ export default function FileUpload() {
                 setPreview(rows, headers, 0);
             };
             reader.readAsBinaryString(file);
+        } else if (file.name.endsWith('.json')) {
+            // Handle JSON file preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const text = e.target?.result as string;
+                    const jsonData = JSON.parse(text);
+
+                    // Handle array of objects
+                    if (Array.isArray(jsonData)) {
+                        const preview = jsonData.slice(0, 10);
+                        const headers = preview.length > 0 ? Object.keys(preview[0]) : [];
+                        setPreview(preview, headers, jsonData.length);
+                    }
+                    // Handle single object - wrap in array
+                    else if (typeof jsonData === 'object' && jsonData !== null) {
+                        const headers = Object.keys(jsonData);
+                        setPreview([jsonData], headers, 1);
+                    }
+                    // Handle other JSON types
+                    else {
+                        setPreview(
+                            [{ value: jsonData }],
+                            ['value'],
+                            1
+                        );
+                    }
+                } catch (error) {
+                    console.error('Failed to parse JSON:', error);
+                    // Show error preview
+                    setPreview(
+                        [{ error: 'Invalid JSON file', details: String(error) }],
+                        ['error', 'details'],
+                        0
+                    );
+                }
+            };
+            reader.readAsText(file);
+        } else if (file.name.endsWith('.pdf')) {
+            // Handle PDF file preview - show file info
+            // Note: Full PDF parsing happens on the backend
+            const fileSizeKB = (file.size / 1024).toFixed(2);
+            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            const sizeDisplay = file.size > 1024 * 1024 ? `${fileSizeMB} MB` : `${fileSizeKB} KB`;
+
+            setPreview(
+                [
+                    {
+                        property: 'File Name',
+                        value: file.name
+                    },
+                    {
+                        property: 'File Size',
+                        value: sizeDisplay
+                    },
+                    {
+                        property: 'File Type',
+                        value: 'PDF Document'
+                    },
+                    {
+                        property: 'Last Modified',
+                        value: new Date(file.lastModified).toLocaleString()
+                    },
+                    {
+                        property: 'Status',
+                        value: 'Ready for upload - Tables will be extracted on server'
+                    }
+                ],
+                ['property', 'value'],
+                5
+            );
         }
     }, [setFile, setPreview]);
 

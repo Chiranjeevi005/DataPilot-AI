@@ -1,0 +1,363 @@
+# Antigravity Deployment Configuration for DataPilot AI
+# This manifest defines services, workers, scheduled jobs, and infrastructure requirements
+
+version: "1.0"
+project: datapilot-ai
+
+# Environment variables and secrets configuration
+environment:
+  # Secrets (managed via Antigravity Secret Manager)
+  secrets:
+    - OPENROUTER_API_KEY
+    - REDIS_URL
+    - BLOB_KEY
+    - SENTRY_DSN  # Optional
+
+  # Non-secret environment variables
+  variables:
+    # LLM Configuration
+    LLM_MODEL: "deepseek/deepseek-r1"
+    LLM_BASE_URL: "https://openrouter.ai/api/v1"
+    LLM_MOCK: "false"
+    
+    # Job Configuration
+    JOB_TTL_HOURS: "24"
+    JOB_TIMEOUT_SECONDS: "600"
+    CLIENT_MAX_WAIT_SECONDS: "600"
+    MAX_UPLOAD_SIZE_BYTES: "20971520"
+    
+    # Retry & Circuit Breaker
+    LLM_RETRY_ATTEMPTS: "2"
+    BLOB_RETRY_ATTEMPTS: "3"
+    RETRY_INITIAL_DELAY: "0.5"
+    RETRY_FACTOR: "2.0"
+    RETRY_MAX_DELAY: "10"
+    LLM_CIRCUIT_THRESHOLD: "5"
+    LLM_CIRCUIT_WINDOW: "300"
+    LLM_CIRCUIT_COOLDOWN: "600"
+    
+    # Worker Configuration
+    WORKER_POLL_INTERVAL: "1"
+    WORKER_HEARTBEAT_INTERVAL: "30"
+    HEALTH_WORKER_MAX_AGE_SECONDS: "60"
+    SIMULATED_WORK_SECONDS: "0"
+    SIMULATED_SLOW_PROCESSING_SECONDS: "0"
+    
+    # Storage Configuration
+    BLOB_ENABLED: "true"
+    RESULTS_DIR: "/tmp/datapilot/results"
+    BLOB_PATH_PREFIXES: "uploads/,results/"
+    
+    # Cleanup Configuration
+    CLEANER_CRON_SCHEDULE: "0 3 * * *"
+    CLEANER_DRY_RUN: "false"
+    CLEANER_LOG_LEVEL: "INFO"
+    CLEANER_MAX_DELETE_BATCH: "500"
+    CLEANER_AUDIT_BLOB_PATH: "maintenance/cleaner_runs/"
+    MIN_TTL_HOURS: "1"
+    
+    # Observability Configuration
+    OBSERVABILITY_LOG_LEVEL: "INFO"
+    METRICS_FLUSH_INTERVAL: "10"
+    METRICS_AUTO_FLUSH: "true"
+    METRICS_SNAPSHOT_PATH: "metrics/metrics_snapshot.json"
+    DEBUG: "false"
+    ENVIRONMENT: "production"
+    
+    # Data Processing Configuration
+    STREAM_THRESHOLD_BYTES: "5242880"
+    CHUNKSIZE_ROWS: "50000"
+    TOP_CATEGORY_COUNT: "8"
+    QUALITY_SCORE_CONFIG: "default"
+    PDF_MAX_PAGES: "50"
+    PDF_TEXT_MAX_CHARS: "5000"
+    PDF_TABLE_MIN_ROWS: "5"
+    PDF_TABLE_MIN_COLS: "2"
+    FEWSHOT_DEFAULT_COUNT: "3"
+
+# Services definition
+services:
+  # API Service - Serverless endpoints
+  - name: api
+    type: serverless
+    runtime: python3.11
+    handler: src/api
+    
+    # API endpoints
+    endpoints:
+      - path: /api/upload
+        method: POST
+        handler: upload.route.handle_upload
+        timeout: 30
+        memory: 512
+        
+      - path: /api/job-status
+        method: GET
+        handler: job_status.route.handle_job_status
+        timeout: 10
+        memory: 256
+        
+      - path: /api/cancel
+        method: POST
+        handler: cancel.route.handle_cancel
+        timeout: 10
+        memory: 256
+        
+      - path: /api/health
+        method: GET
+        handler: health.route.handle_health
+        timeout: 10
+        memory: 256
+    
+    # Resource limits
+    resources:
+      memory: 512
+      timeout: 30
+    
+    # Permissions
+    permissions:
+      - redis:read
+      - redis:write
+      - blob:write
+      - blob:read
+      - secrets:read
+    
+    # Auto-scaling
+    scaling:
+      min: 1
+      max: 10
+      target_cpu: 70
+  
+  # Worker Service - Background job processor
+  - name: worker
+    type: worker
+    runtime: python3.11
+    command: python src/worker.py
+    
+    # Worker configuration
+    instances: 1  # Start with 1, scale as needed
+    
+    # Resource limits
+    resources:
+      memory: 1024
+      cpu: 1
+    
+    # Permissions
+    permissions:
+      - redis:read
+      - redis:write
+      - blob:read
+      - blob:write
+      - blob:list
+      - secrets:read
+    
+    # Health check
+    health_check:
+      type: redis_key
+      key: "worker:heartbeat"
+      interval: 60
+      timeout: 5
+      max_age: 60
+    
+    # Restart policy
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      delay: 10
+    
+    # Graceful shutdown
+    shutdown:
+      grace_period: 30
+      signal: SIGTERM
+
+# Scheduled Jobs
+scheduled_jobs:
+  # Cleanup job - runs daily at 3 AM
+  - name: cleaner
+    schedule: "0 3 * * *"  # Cron format
+    runtime: python3.11
+    command: python src/maintenance/cron_entry.py
+    timeout: 3600  # 1 hour max
+    
+    resources:
+      memory: 512
+      cpu: 0.5
+    
+    permissions:
+      - redis:read
+      - redis:write
+      - blob:read
+      - blob:write
+      - blob:delete
+      - blob:list
+      - secrets:read
+    
+    # Retry on failure
+    retry:
+      max_attempts: 2
+      backoff: exponential
+
+# Infrastructure dependencies
+dependencies:
+  # Redis
+  - name: redis
+    type: redis
+    version: "7.0"
+    persistence: true
+    memory: 256
+    
+  # Blob Storage
+  - name: blob
+    type: blob_storage
+    retention: 30  # days
+    
+# Logging configuration
+logging:
+  level: INFO
+  format: json
+  retention_days: 30
+  
+  # Log destinations
+  destinations:
+    - type: stdout
+    - type: antigravity_logs
+      index: datapilot-logs
+  
+  # Structured logging fields
+  fields:
+    - timestamp
+    - level
+    - component
+    - job_id
+    - step
+    - message
+    - duration_ms
+
+# Monitoring & Alerts
+monitoring:
+  # Metrics to track
+  metrics:
+    - name: jobs_received_total
+      type: counter
+    - name: jobs_completed_total
+      type: counter
+    - name: jobs_failed_total
+      type: counter
+    - name: jobs_cancelled_total
+      type: counter
+    - name: job_processing_duration_seconds
+      type: histogram
+    - name: llm_call_duration_seconds
+      type: histogram
+    - name: blob_operation_duration_seconds
+      type: histogram
+  
+  # Alerts
+  alerts:
+    - name: high_failure_rate
+      condition: "jobs_failed_total / jobs_received_total > 0.1"
+      window: 300  # 5 minutes
+      severity: warning
+      
+    - name: worker_down
+      condition: "worker:heartbeat age > 120"
+      severity: critical
+      
+    - name: llm_circuit_open
+      condition: "llm_circuit_state == 'open'"
+      severity: warning
+
+# Deployment configuration
+deployment:
+  # Build configuration
+  build:
+    include:
+      - src/**
+      - prompts/**
+      - scripts/**
+      - requirements.txt
+      - antigravity.yml
+    exclude:
+      - .git/**
+      - .venv/**
+      - node_modules/**
+      - tmp_uploads/**
+      - __pycache__/**
+      - "*.pyc"
+      - .env
+      - .env.local
+  
+  # Pre-deployment checks
+  pre_deploy:
+    - command: python -m pip install -r requirements.txt
+      description: "Install Python dependencies"
+    - command: python -m py_compile src/worker.py
+      description: "Validate worker syntax"
+  
+  # Post-deployment checks
+  post_deploy:
+    - command: scripts/verify_deploy.sh
+      description: "Verify deployment health"
+      timeout: 60
+  
+  # Rollback configuration
+  rollback:
+    enabled: true
+    auto_rollback_on_failure: true
+    keep_versions: 5
+
+# Security configuration
+security:
+  # Secret rotation
+  secret_rotation:
+    enabled: true
+    interval_days: 90
+  
+  # Network policies
+  network:
+    ingress:
+      - from: internet
+        to: api
+        ports: [443]
+    egress:
+      - from: api
+        to: redis
+      - from: api
+        to: blob
+      - from: worker
+        to: redis
+      - from: worker
+        to: blob
+      - from: worker
+        to: openrouter.ai
+        ports: [443]
+  
+  # IAM roles
+  roles:
+    - name: api_role
+      permissions:
+        - redis:read
+        - redis:write
+        - blob:write
+        - blob:read
+        - secrets:read
+    
+    - name: worker_role
+      permissions:
+        - redis:read
+        - redis:write
+        - blob:read
+        - blob:write
+        - blob:list
+        - secrets:read
+    
+    - name: cleaner_role
+      permissions:
+        - redis:read
+        - redis:write
+        - redis:delete
+        - blob:read
+        - blob:write
+        - blob:delete
+        - blob:list
+        - secrets:read

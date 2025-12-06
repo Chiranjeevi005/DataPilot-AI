@@ -1510,3 +1510,198 @@ ENVIRONMENT=development                    # Environment name
 
 ---
 
+## Deployment to Antigravity
+
+DataPilot AI is production-ready and can be deployed to Antigravity with comprehensive automation, smoke tests, and monitoring.
+
+### Quick Start
+
+```bash
+# 1. Set required secrets
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+export REDIS_URL="redis://your-redis:6379/0"
+
+# 2. Deploy
+cd scripts
+./deploy_antigravity.sh
+
+# 3. Verify
+./verify_deploy.sh
+
+# 4. Run smoke tests
+./run_smoke_tests.sh
+```
+
+### Deployment Features
+
+- ✅ **One-Command Deployment**: `./deploy_antigravity.sh`
+- ✅ **Automated Verification**: Health checks, Redis, blob storage, worker heartbeat
+- ✅ **Comprehensive Smoke Tests**: 6 end-to-end tests with exponential backoff
+- ✅ **Automatic Rollback**: On smoke test failure (CI/CD)
+- ✅ **Secrets Management**: Antigravity Secret Manager integration
+- ✅ **CI/CD Ready**: GitHub Actions workflow included
+- ✅ **Monitoring**: Structured logging, metrics, alerts
+- ✅ **Documentation**: Runbook, troubleshooting, checklist
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Antigravity Platform                     │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  API Service │  │    Worker    │  │   Cleaner    │     │
+│  │  (Serverless)│  │  (Persistent)│  │  (Scheduled) │     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
+│         │                  │                  │              │
+│  ┌──────▼──────────────────▼──────────────────▼───────┐    │
+│  │                    Redis Queue                      │    │
+│  └─────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                  Blob Storage                        │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │   OpenRouter     │
+                    │ (deepseek-r1)    │
+                    └──────────────────┘
+```
+
+### Deployment Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `deploy_antigravity.sh` | Main deployment with validation and secrets |
+| `rollback_antigravity.sh` | Rollback to previous deployment |
+| `verify_deploy.sh` | Post-deployment health checks |
+| `run_smoke_tests.sh` | Comprehensive smoke test suite |
+| `ci_deploy.sh` | CI/CD integration with auto-rollback |
+
+### Smoke Tests
+
+Six comprehensive end-to-end tests:
+
+1. **Upload and Process**: Upload CSV → Process → Validate result.json schema
+2. **Frontend Render**: Validate result payload structure
+3. **LLM Integration**: Verify OpenRouter LLM calls and insights
+4. **Cancel Flow**: Upload → Cancel → Verify status transitions
+5. **Error Handling**: Test LLM failure fallback
+6. **Timeout**: Test job timeout enforcement
+
+**Features**:
+- Exponential backoff polling (1s → 2s → 4s → 8s → 15s)
+- Configurable timeout (`CLIENT_MAX_WAIT_SECONDS`)
+- Detailed reports saved to `reports/`
+
+### Rollback
+
+```bash
+# Automatic rollback (with confirmation)
+./scripts/rollback_antigravity.sh
+
+# Force rollback (no confirmation)
+FORCE_ROLLBACK=1 ./scripts/rollback_antigravity.sh
+
+# Rollback to specific version
+ROLLBACK_VERSION=deploy_20241206_100000 ./scripts/rollback_antigravity.sh
+```
+
+### CI/CD Integration
+
+GitHub Actions workflow (`.github/workflows/deploy.yml`):
+
+- ✅ Automated deployment on push to `main`/`staging`
+- ✅ Python syntax validation
+- ✅ Smoke tests after deployment
+- ✅ Automatic rollback on failure
+- ✅ Slack notifications
+- ✅ Artifact uploads
+
+**Required GitHub Secrets**:
+- `OPENROUTER_API_KEY`
+- `REDIS_URL`
+- `BLOB_KEY`
+- `SENTRY_DSN`
+- `ANTIGRAVITY_API_ENDPOINT`
+- `ANTIGRAVITY_API_KEY`
+- `SLACK_WEBHOOK_URL`
+
+### Monitoring
+
+**Metrics**:
+- `jobs_received_total` - Total jobs received
+- `jobs_completed_total` - Total jobs completed
+- `jobs_failed_total` - Total jobs failed
+- `job_processing_duration_seconds` - Job processing time
+- `llm_call_duration_seconds` - LLM call latency
+
+**Alerts**:
+- High failure rate (> 10%)
+- Worker down (heartbeat age > 120s)
+- LLM circuit breaker open
+
+**Logs**:
+```bash
+# View worker logs
+antigravity logs --service worker --follow
+
+# View API logs
+antigravity logs --service api --follow
+```
+
+### Documentation
+
+- **[Deployment Guide](./docs/DEPLOYMENT.md)** - Quick start and architecture
+- **[Deployment Runbook](./docs/deploy_runbook.md)** - Detailed procedures
+- **[Troubleshooting Guide](./docs/troubleshooting.md)** - Common issues
+- **[Deployment Checklist](./docs/deployment_checklist.md)** - Pre/post-deployment
+- **[Deployment Complete](./DEPLOYMENT_COMPLETE.md)** - Implementation summary
+
+### Environment Variables
+
+Required secrets (set in Antigravity Secret Manager):
+
+```bash
+OPENROUTER_API_KEY=sk-or-v1-your-key  # Required
+REDIS_URL=redis://your-redis:6379/0   # Required
+BLOB_KEY=your-blob-key                # Optional
+SENTRY_DSN=https://your-sentry-dsn    # Optional
+```
+
+Configuration (set in `antigravity.yml`):
+
+```bash
+LLM_MODEL=deepseek/deepseek-r1
+JOB_TIMEOUT_SECONDS=600
+MAX_UPLOAD_SIZE_BYTES=20971520
+WORKER_HEARTBEAT_INTERVAL=30
+CLEANER_CRON_SCHEDULE="0 3 * * *"
+```
+
+### Acceptance Criteria
+
+Deployment is successful when:
+
+- ✅ `deploy_antigravity.sh` runs successfully
+- ✅ `verify_deploy.sh` returns healthy
+- ✅ `run_smoke_tests.sh` passes all tests
+- ✅ Upload returns jobId for sample CSV
+- ✅ Worker processes job and sets status to `completed`
+- ✅ `result.json` exists and matches schema
+- ✅ Logs show LLM calls to OpenRouter
+- ✅ No active alerts
+- ✅ Error rate < 5%
+
+### Next Steps
+
+1. Set secrets in Antigravity Secret Manager
+2. Run `./scripts/deploy_antigravity.sh`
+3. Verify with `./scripts/verify_deploy.sh`
+4. Test with `./scripts/run_smoke_tests.sh`
+5. Monitor metrics and logs for 24 hours
+6. Configure CI/CD with GitHub Actions
+
+---
+

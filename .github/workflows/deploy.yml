@@ -1,0 +1,147 @@
+name: Deploy to Antigravity
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    name: Deploy DataPilot AI
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for git tags
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile src/worker.py
+          python -m py_compile src/api/upload/route.py
+          python -m py_compile src/api/health/route.py
+          python -m py_compile src/api/cancel/route.py
+      
+      - name: Set environment variables
+        run: |
+          echo "ENVIRONMENT=${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}" >> $GITHUB_ENV
+          echo "CI_BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "CI_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
+      
+      - name: Deploy to Antigravity
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          BLOB_KEY: ${{ secrets.BLOB_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ANTIGRAVITY_API_ENDPOINT: ${{ secrets.ANTIGRAVITY_API_ENDPOINT }}
+          ANTIGRAVITY_API_KEY: ${{ secrets.ANTIGRAVITY_API_KEY }}
+          AUTO_ROLLBACK_ON_SMOKE_FAIL: 'true'
+          SMOKE_TEST_ON_DEPLOY: 'true'
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/ci_deploy.sh
+      
+      - name: Upload smoke test report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: smoke-test-report
+          path: reports/smoke_test_report_*.json
+          retention-days: 30
+      
+      - name: Upload deployment artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-artifacts
+          path: |
+            reports/verify_deploy_*.json
+            reports/smoke_test_result_*.json
+          retention-days: 30
+      
+      - name: Notify on success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "✅ DataPilot AI deployed successfully to ${{ env.ENVIRONMENT }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment Successful* ✅\n*Environment:* ${{ env.ENVIRONMENT }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}"
+                  }
+                }
+              ]
+            }
+      
+      - name: Notify on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "❌ DataPilot AI deployment failed on ${{ env.ENVIRONMENT }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment Failed* ❌\n*Environment:* ${{ env.ENVIRONMENT }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Action:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  }
+                }
+              ]
+            }
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure()
+    
+    environment:
+      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Rollback deployment
+        env:
+          ANTIGRAVITY_API_ENDPOINT: ${{ secrets.ANTIGRAVITY_API_ENDPOINT }}
+          ANTIGRAVITY_API_KEY: ${{ secrets.ANTIGRAVITY_API_KEY }}
+          FORCE_ROLLBACK: '1'
+        run: |
+          chmod +x scripts/rollback_antigravity.sh
+          ./scripts/rollback_antigravity.sh
