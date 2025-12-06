@@ -90,6 +90,19 @@ const config: Config = {
                     700: '#334155',
                     800: '#1E293B',
                     900: '#0F172A',
+                },
+                datapilot: {
+                    page: '#F5F7FA',
+                    card: '#FFFFFF',
+                    primary: '#00A3FF',
+                    cyan: '#00C2D1',
+                    violet: '#8A6BFF',
+                    orange: '#FFB86B',
+                    success: '#2ECC71',
+                    danger: '#FF6B6B',
+                    text: '#0F172A',
+                    muted: '#667085',
+                    border: '#E6E9EE',
                 }
             },
             // Responsive typography using clamp()

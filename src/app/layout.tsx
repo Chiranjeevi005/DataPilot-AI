@@ -12,6 +12,8 @@ export const metadata = {
   },
 };
 
+import { ToastProvider } from '@/components/ui/ToastContext';
+
 export default function RootLayout({
   children,
 }: {
@@ -23,7 +25,9 @@ export default function RootLayout({
         className={clsx(inter.className, "antialiased bg-background text-slate-800")}
         suppressHydrationWarning
       >
-        {children}
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );
