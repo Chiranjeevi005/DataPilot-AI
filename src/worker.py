@@ -19,14 +19,35 @@ logging.basicConfig(
 logger = logging.getLogger("worker")
 
 shutdown_requested = False
+current_job_id = None
 
 def signal_handler(signum, frame):
     global shutdown_requested
     logger.info(f"Received signal {signum}. Shutting down gracefully...")
     shutdown_requested = True
+    
+    # If currently processing a job, mark it as failed
+    if current_job_id:
+        try:
+            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+            r = redis.from_url(redis_url)
+            job_key = f"job:{current_job_id}"
+            job_data_str = r.get(job_key)
+            if job_data_str:
+                job_data = json.loads(job_data_str)
+                if job_data.get('status') == 'processing':
+                    from datetime import datetime
+                    job_data['status'] = 'failed'
+                    job_data['error'] = 'worker_shutdown'
+                    job_data['errorMessage'] = 'Worker shutdown during processing'
+                    job_data['updatedAt'] = datetime.utcnow().isoformat() + "Z"
+                    r.set(job_key, json.dumps(job_data))
+                    logger.info(f"Marked job {current_job_id} as failed due to shutdown")
+        except Exception as e:
+            logger.error(f"Error marking job as failed during shutdown: {e}")
 
 def run_worker():
-    global shutdown_requested
+    global shutdown_requested, current_job_id
     
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -60,25 +81,29 @@ def run_worker():
                     job_payload = json.loads(payload_str)
                     
                     job_id = job_payload.get('jobId')
+                    current_job_id = job_id
                     
                     # Check for cancellation before starting
-                    # (Optional/Advanced: keep it simple for now as per prompt)
-                    # "Ensure worker respects job cancellation: if job:{jobId}.status === 'cancelled'..."
                     if job_id:
                         status_key = f"job:{job_id}"
                         current_status_payload = r.get(status_key)
                         if current_status_payload:
                             current_status = json.loads(current_status_payload).get('status')
                             if current_status == 'cancelled':
-                                logger.info(f"Job {job_id} was cancelled. Skipping.")
+                                logger.info(f"Job {job_id} was cancelled before processing. Skipping.")
+                                current_job_id = None
                                 continue
 
+                    # Process the job
                     process_job.process_job(r, job_payload)
+                    current_job_id = None
                     
                 except json.JSONDecodeError:
                     logger.error("Failed to decode job payload JSON")
+                    current_job_id = None
                 except Exception as e:
                     logger.error(f"Unexpected error processing job: {e}", exc_info=True)
+                    current_job_id = None
             
             # If no item, loop continues (checking shutdown_requested)
             
@@ -93,3 +118,4 @@ def run_worker():
 
 if __name__ == "__main__":
     run_worker()
+

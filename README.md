@@ -228,3 +228,272 @@ To use a different provider (e.g. OpenAI, Anthropic):
 1. Modify `src/lib/llm_client.py`.
 2. Update the `generate_insights` function to call the new provider.
 3. Ensure the prompt logic remains consistent (Inputs: Schema/KPIs, Output: JSON).
+
+---
+
+## Backend Phase 7: Production Hardening
+
+Phase 7 makes the DataPilot backend production-ready with retry/backoff policies, job timeouts, cancellation, and structured error handling.
+
+### Features
+
+#### 1. Retry & Backoff Logic
+All transient operations use exponential backoff with jitter:
+- **Blob Operations**: 3 attempts (configurable via `BLOB_RETRY_ATTEMPTS`)
+- **LLM Calls**: 2 attempts (configurable via `LLM_RETRY_ATTEMPTS`)
+- **HTTP Downloads**: 3 attempts
+
+**Algorithm**:
+```
+delay = min(max_delay, initial_delay * factor^(attempt-1))
+delay *= random.uniform(0.9, 1.1)  # ±10% jitter
+```
+
+**Configuration** (`.env`):
+```bash
+BLOB_RETRY_ATTEMPTS=3
+LLM_RETRY_ATTEMPTS=2
+RETRY_INITIAL_DELAY=0.5
+RETRY_FACTOR=2.0
+RETRY_MAX_DELAY=10
+```
+
+#### 2. LLM Circuit Breaker
+Prevents cascading failures when LLM service is down:
+- Tracks consecutive failures within a sliding time window
+- Opens circuit after threshold failures
+- Uses deterministic fallback during cooldown period
+- Automatically closes after cooldown
+
+**Configuration**:
+```bash
+LLM_CIRCUIT_THRESHOLD=5        # failures to open circuit
+LLM_CIRCUIT_WINDOW=300         # seconds (5 min)
+LLM_CIRCUIT_COOLDOWN=600       # seconds (10 min)
+```
+
+**Behavior**:
+- Circuit OPEN → All LLM calls use fallback (no API calls)
+- Circuit CLOSED → Normal operation with retries
+- Fallback provides generic insights based on KPIs
+
+#### 3. Job Timeout
+Server-enforced timeout prevents runaway jobs:
+- Set at job creation (`timeoutAt` field)
+- Checked periodically during processing
+- Enforced by `/api/job-status` endpoint
+
+**Configuration**:
+```bash
+JOB_TIMEOUT_SECONDS=600  # 10 minutes default
+```
+
+**Behavior**:
+- Job exceeds timeout → status set to `failed`
+- Error code: `timeout`
+- `error.json` created in blob storage
+
+#### 4. Job Cancellation
+Cancel jobs via API endpoint:
+
+**Endpoint**: `POST /api/cancel?jobId=<id>`
+
+**Request**:
+```bash
+curl -X POST "http://localhost:5328/api/cancel?jobId=job_abc123"
+# or JSON body
+curl -X POST http://localhost:5328/api/cancel \
+  -H "Content-Type: application/json" \
+  -d '{"jobId": "job_abc123"}'
+```
+
+**Response**:
+```json
+{
+  "jobId": "job_abc123",
+  "status": "cancelled",
+  "cancelledAt": "2025-12-06T10:30:00Z"
+}
+```
+
+**Behavior**:
+- Worker checks cancellation before and during processing
+- Cancelled jobs do NOT produce `result.json`
+- Cannot cancel completed/failed jobs
+
+#### 5. Error Handling & error.json
+On failure, an `error.json` is saved to blob storage:
+
+**Structure**:
+```json
+{
+  "jobId": "job_abc123",
+  "status": "failed",
+  "error": "timeout",
+  "message": "Job exceeded maximum processing time",
+  "timestamp": "2025-12-06T10:30:00Z"
+}
+```
+
+**Error Codes**:
+- `timeout` - Job exceeded `JOB_TIMEOUT_SECONDS`
+- `processing_error` - General processing failure
+- `blob_upload_failed` - Storage operation failed after retries
+- `worker_shutdown` - Worker terminated during processing
+
+**Job Status Fields**:
+```json
+{
+  "jobId": "job_abc123",
+  "status": "failed",
+  "error": "timeout",
+  "errorMessage": "Job exceeded maximum processing time",
+  "resultUrl": "file:///path/to/error.json",
+  "createdAt": "2025-12-06T10:00:00Z",
+  "updatedAt": "2025-12-06T10:10:00Z"
+}
+```
+
+#### 6. Client Polling Strategy
+Recommended exponential backoff for status polling:
+
+**Algorithm**:
+```javascript
+const delays = [1000, 2000, 4000, 8000, 15000]; // ms
+let attempt = 0;
+const maxWait = 600000; // 10 minutes
+
+while (elapsed < maxWait) {
+  const status = await fetchJobStatus(jobId);
+  
+  if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+    break;
+  }
+  
+  const delay = delays[Math.min(attempt, delays.length - 1)];
+  await sleep(delay);
+  attempt++;
+}
+```
+
+**Configuration**:
+```bash
+CLIENT_MAX_WAIT_SECONDS=600  # 10 minutes
+```
+
+### Testing Phase 7
+
+Four test scripts validate production hardening:
+
+#### 1. Blob Retry Test
+```bash
+./scripts/test_phase7_retry_blob.sh
+```
+Tests retry logic for blob operations (requires manual failure injection for full test).
+
+#### 2. LLM Failure Test
+```bash
+./scripts/test_phase7_llm_fail.sh
+```
+Tests LLM retry and fallback by using invalid API key.
+
+**Expected**:
+- 2 retry attempts
+- Deterministic fallback used
+- Job completes with `status: completed`
+- `issues` field contains LLM failure indicator
+
+#### 3. Cancellation Test
+```bash
+./scripts/test_phase7_cancel.sh
+```
+Tests job cancellation at various stages.
+
+**Expected**:
+- Cancelled jobs remain `status: cancelled`
+- No `result.json` produced
+- Cannot cancel completed jobs
+
+#### 4. Timeout Test
+```bash
+./scripts/test_phase7_timeout.sh
+```
+Tests server-side timeout enforcement.
+
+**Expected**:
+- Jobs exceeding timeout marked as `failed`
+- Error code: `timeout`
+- `error.json` created
+
+### Graceful Shutdown
+Worker handles SIGINT/SIGTERM gracefully:
+- Completes current processing step
+- Marks in-progress job as `failed` with `error: worker_shutdown`
+- Exits cleanly
+
+**Test**:
+```bash
+# Start worker
+python src/worker.py
+
+# In another terminal, send SIGTERM
+kill -TERM <worker_pid>
+```
+
+### Monitoring & Observability
+All operations log structured messages:
+```json
+{
+  "timestamp": "2025-12-06T10:30:00Z",
+  "level": "INFO",
+  "jobId": "job_abc123",
+  "step": "llm_call",
+  "message": "LLM call (deepseek/deepseek-r1): Attempt 1/2",
+  "duration_ms": 1234
+}
+```
+
+**Key Log Messages**:
+- `"Attempt {n}/{max}"` - Retry attempts
+- `"Circuit breaker OPENING"` - Circuit breaker triggered
+- `"Job {id} was cancelled"` - Cancellation detected
+- `"Job {id} has timed out"` - Timeout enforced
+
+### Production Deployment Checklist
+
+- [ ] Set `JOB_TIMEOUT_SECONDS` appropriate for workload
+- [ ] Configure `OPENROUTER_API_KEY` for LLM
+- [ ] Set circuit breaker thresholds based on expected load
+- [ ] Enable blob storage (`BLOB_ENABLED=true`)
+- [ ] Set up Redis persistence
+- [ ] Configure worker auto-restart (systemd, supervisor, etc.)
+- [ ] Set up log aggregation (CloudWatch, Datadog, etc.)
+- [ ] Monitor circuit breaker state
+- [ ] Set up alerts for high failure rates
+- [ ] Test graceful shutdown in production environment
+
+### Environment Variables Reference
+
+See `.env.example` for complete list. Key Phase 7 variables:
+
+```bash
+# Timeouts
+JOB_TIMEOUT_SECONDS=600
+CLIENT_MAX_WAIT_SECONDS=600
+
+# Retry Configuration
+LLM_RETRY_ATTEMPTS=2
+BLOB_RETRY_ATTEMPTS=3
+RETRY_INITIAL_DELAY=0.5
+RETRY_FACTOR=2.0
+RETRY_MAX_DELAY=10
+
+# Circuit Breaker
+LLM_CIRCUIT_THRESHOLD=5
+LLM_CIRCUIT_WINDOW=300
+LLM_CIRCUIT_COOLDOWN=600
+
+# LLM
+OPENROUTER_API_KEY=your_key_here
+LLM_MODEL=deepseek/deepseek-r1
+```

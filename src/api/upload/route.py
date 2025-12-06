@@ -105,12 +105,20 @@ def upload_handler():
 
         # Success - Update Redis
         timestamp = current_timestamp_iso()
+        
+        # Calculate timeout
+        job_timeout_seconds = int(os.getenv('JOB_TIMEOUT_SECONDS', '600'))
+        from datetime import datetime, timedelta
+        timeout_dt = datetime.utcnow() + timedelta(seconds=job_timeout_seconds)
+        timeout_at = timeout_dt.isoformat() + "Z"
+        
         job_data = {
             "jobId": job_id,
             "status": "submitted",
             "fileUrl": file_url,
             "fileName": filename,
-            "createdAt": timestamp
+            "createdAt": timestamp,
+            "timeoutAt": timeout_at
         }
         
         try:
@@ -141,6 +149,8 @@ def upload_handler():
 @app.route('/api/job-status/<job_id>', methods=['GET'])
 def get_job_status(job_id):
     try:
+        from datetime import datetime
+        
         r = get_redis_client()
         job_key = f"job:{job_id}"
         data_str = r.get(job_key)
@@ -149,8 +159,45 @@ def get_job_status(job_id):
             return jsonify({"error": "Job not found"}), 404
             
         data = json.loads(data_str)
-        # return full data
-        return jsonify(data), 200
+        
+        # Check for timeout if job is still processing
+        if data.get('status') == 'processing':
+            timeout_at_str = data.get('timeoutAt')
+            if timeout_at_str:
+                try:
+                    timeout_at = datetime.fromisoformat(timeout_at_str.replace('Z', '+00:00'))
+                    now = datetime.utcnow()
+                    
+                    if now > timeout_at.replace(tzinfo=None):
+                        # Job has timed out
+                        logger.warning(f"Job {job_id} has timed out")
+                        data['status'] = 'failed'
+                        data['error'] = 'timeout'
+                        data['errorMessage'] = 'Job exceeded maximum processing time'
+                        data['updatedAt'] = datetime.utcnow().isoformat() + "Z"
+                        
+                        # Update Redis
+                        r.set(job_key, json.dumps(data))
+                except Exception as e:
+                    logger.error(f"Error parsing timeout: {e}")
+        
+        # Return job data with standard fields
+        response = {
+            "jobId": job_id,
+            "status": data.get('status'),
+            "progress": data.get('progress'),
+            "resultUrl": data.get('resultUrl'),
+            "error": data.get('error'),
+            "errorMessage": data.get('errorMessage'),
+            "createdAt": data.get('createdAt'),
+            "updatedAt": data.get('updatedAt'),
+            "cancelledAt": data.get('cancelledAt')
+        }
+        
+        # Remove None values
+        response = {k: v for k, v in response.items() if v is not None}
+        
+        return jsonify(response), 200
         
     except Exception as e:
         logger.error(f"Error fetching status for {job_id}: {e}", exc_info=True)

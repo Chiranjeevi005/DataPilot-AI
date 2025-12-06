@@ -5,11 +5,34 @@ import time
 from typing import Dict, Any, Optional
 import openai
 
+try:
+    from .retry import retry_http_call
+except ImportError:
+    from retry import retry_http_call
+
 logger = logging.getLogger(__name__)
 
 # Constants
 MAX_RETRIES = 1
 DEFAULT_MODEL = "deepseek/deepseek-r1" # OpenRouter identifier
+
+# Configuration from env
+LLM_RETRY_ATTEMPTS = int(os.getenv('LLM_RETRY_ATTEMPTS', '2'))
+RETRY_INITIAL_DELAY = float(os.getenv('RETRY_INITIAL_DELAY', '0.5'))
+RETRY_FACTOR = float(os.getenv('RETRY_FACTOR', '2.0'))
+RETRY_MAX_DELAY = float(os.getenv('RETRY_MAX_DELAY', '10'))
+
+# Circuit Breaker Configuration
+LLM_CIRCUIT_THRESHOLD = int(os.getenv('LLM_CIRCUIT_THRESHOLD', '5'))
+LLM_CIRCUIT_WINDOW = int(os.getenv('LLM_CIRCUIT_WINDOW', '300'))  # seconds
+LLM_CIRCUIT_COOLDOWN = int(os.getenv('LLM_CIRCUIT_COOLDOWN', '600'))  # seconds
+
+# Circuit Breaker State (in-memory, simple implementation)
+_circuit_breaker_state = {
+    'failures': [],  # List of failure timestamps
+    'is_open': False,
+    'opened_at': None
+}
 
 def _load_prompt(filename: str) -> str:
     """Loads a prompt template from the prompts directory."""
@@ -22,10 +45,62 @@ def _load_prompt(filename: str) -> str:
         logger.error(f"Failed to load prompt {filename}: {e}")
         return ""
 
+def _check_circuit_breaker() -> bool:
+    """
+    Check if circuit breaker is open.
+    Returns True if circuit is open (should use fallback), False otherwise.
+    """
+    current_time = time.time()
+    
+    # Check if circuit is open and cooldown period has passed
+    if _circuit_breaker_state['is_open']:
+        if _circuit_breaker_state['opened_at'] and \
+           (current_time - _circuit_breaker_state['opened_at']) >= LLM_CIRCUIT_COOLDOWN:
+            # Cooldown complete, close circuit
+            logger.info("Circuit breaker cooldown complete. Closing circuit.")
+            _circuit_breaker_state['is_open'] = False
+            _circuit_breaker_state['opened_at'] = None
+            _circuit_breaker_state['failures'] = []
+            return False
+        else:
+            logger.warning("Circuit breaker is OPEN. Using fallback.")
+            return True
+    
+    # Clean old failures outside the window
+    window_start = current_time - LLM_CIRCUIT_WINDOW
+    _circuit_breaker_state['failures'] = [
+        ts for ts in _circuit_breaker_state['failures'] if ts >= window_start
+    ]
+    
+    # Check if threshold exceeded
+    if len(_circuit_breaker_state['failures']) >= LLM_CIRCUIT_THRESHOLD:
+        logger.error(
+            f"Circuit breaker OPENING: {len(_circuit_breaker_state['failures'])} failures "
+            f"within {LLM_CIRCUIT_WINDOW}s window (threshold: {LLM_CIRCUIT_THRESHOLD})"
+        )
+        _circuit_breaker_state['is_open'] = True
+        _circuit_breaker_state['opened_at'] = current_time
+        return True
+    
+    return False
+
+def _record_llm_failure():
+    """Record an LLM failure for circuit breaker tracking."""
+    _circuit_breaker_state['failures'].append(time.time())
+    logger.debug(f"Recorded LLM failure. Total in window: {len(_circuit_breaker_state['failures'])}")
+
+def _record_llm_success():
+    """Record an LLM success - reset failure count."""
+    if _circuit_breaker_state['failures']:
+        logger.debug("LLM success. Clearing failure history.")
+        _circuit_breaker_state['failures'] = []
+
+
 def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) -> Dict[str, Any]:
     """
     Generates business insights using OpenRouter (OpenAI SDK) or a Mock LLM.
     Returns a dictionary with 'businessSummary', 'evidence'.
+    Implements circuit breaker and retry logic for production resilience.
     """
     start_time = time.time()
     
@@ -34,78 +109,92 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
         logger.info("LLM_MOCK=true, returning canned insights.")
         return _get_mock_response()
 
-    # 2. Configure Client (OpenRouter)
+    # 2. Check Circuit Breaker
+    if _check_circuit_breaker():
+        logger.warning("Circuit breaker is open. Using deterministic fallback.")
+        return _get_fallback_response("circuit_breaker_open")
+
+    # 3. Configure Client (OpenRouter)
     api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("LLM_API_KEY")
     base_url = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
     model_name = os.getenv("LLM_MODEL", DEFAULT_MODEL)
     
     if not api_key:
         logger.warning("OPENROUTER_API_KEY not set. Returning fallback.")
-        return _get_fallback_response("Missing API Key")
+        _record_llm_failure()
+        return _get_fallback_response("missing_api_key")
 
     client = openai.OpenAI(
         api_key=api_key,
         base_url=base_url
     )
 
-    # 3. Prepare Prompt
+    # 4. Prepare Prompt
     prompt_template = _load_prompt("analyst_prompt.txt")
     if not prompt_template:
-        return _get_fallback_response("Prompt load failure")
+        _record_llm_failure()
+        return _get_fallback_response("prompt_load_failure")
 
     prompt = prompt_template.replace("{{FILE_INFO}}", json.dumps(file_info, indent=2))
     prompt = prompt.replace("{{SCHEMA}}", json.dumps(schema, indent=2))
     prompt = prompt.replace("{{KPIS}}", json.dumps(kpis, indent=2))
     prompt = prompt.replace("{{PREVIEW}}", json.dumps(preview, indent=2))
 
-    retries = 0
-    last_error = None
-    
-    while retries <= MAX_RETRIES:
-        try:
-            logger.info(f"Sending request to LLM ({model_name})...")
-            
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a data analyst. Output valid JSON only."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.0
-            )
-            
-            latency = time.time() - start_time
-            text_response = response.choices[0].message.content
-            
-            # 4. Parse JSON
-            try:
-                cleaned_text = text_response.replace("```json", "").replace("```", "").strip()
-                result = json.loads(cleaned_text)
-                
-                # Gap 2: Normalize
-                normalized_result = _normalize_insights(result)
-                
-                normalized_result["_meta"] = {
-                    "model": model_name,
-                    "latency_seconds": round(latency, 2),
-                    "timestamp": time.time()
-                }
-                return normalized_result
-
-            except json.JSONDecodeError as e:
-                logger.warning(f"JSON Parse Error on attempt {retries + 1}: {e}")
-                last_error = e
-
-        except Exception as e:
-            logger.error(f"LLM API Error on attempt {retries + 1}: {e}")
-            last_error = e
+    # 5. Make LLM Call with Retry
+    def _make_llm_call():
+        """Inner function for retry wrapper"""
+        logger.info(f"Sending request to LLM ({model_name})...")
         
-        retries += 1
-        time.sleep(1)
-
-    # 5. Fallback
-    logger.error(f"LLM failed after {retries} attempts.")
-    return _get_fallback_response(f"LLM Failure: {str(last_error)}")
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a data analyst. Output valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0
+        )
+        
+        latency = time.time() - start_time
+        text_response = response.choices[0].message.content
+        
+        # Parse JSON
+        try:
+            cleaned_text = text_response.replace("```json", "").replace("```", "").strip()
+            result = json.loads(cleaned_text)
+            
+            # Normalize
+            normalized_result = _normalize_insights(result)
+            
+            normalized_result["_meta"] = {
+                "model": model_name,
+                "latency_seconds": round(latency, 2),
+                "timestamp": time.time()
+            }
+            
+            # Success!
+            _record_llm_success()
+            logger.info(f"LLM call succeeded in {latency:.2f}s")
+            return normalized_result
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON Parse Error: {e}")
+            raise ValueError(f"Invalid JSON from LLM: {e}")
+    
+    try:
+        # Use retry_http_call wrapper
+        return retry_http_call(
+            _make_llm_call,
+            attempts=LLM_RETRY_ATTEMPTS,
+            initial_delay=RETRY_INITIAL_DELAY,
+            factor=RETRY_FACTOR,
+            max_delay=RETRY_MAX_DELAY,
+            operation_name=f"LLM call ({model_name})"
+        )
+    except Exception as e:
+        # All retries failed
+        logger.error(f"LLM failed after {LLM_RETRY_ATTEMPTS} attempts: {e}")
+        _record_llm_failure()
+        return _get_fallback_response(f"llm_failure_fallback: {str(e)}")
 
 def _normalize_insights(raw_json: Dict) -> Dict[str, Any]:
     """

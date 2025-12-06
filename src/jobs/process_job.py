@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 def process_job(redis_client, job_payload):
     """
     Process a single job: update status, download, parse, analyze, save result, finish.
+    Implements cancellation checking and timeout enforcement.
     """
     job_id = job_payload.get('jobId')
     file_url = job_payload.get('fileUrl')
@@ -29,10 +30,19 @@ def process_job(redis_client, job_payload):
 
     logger.info(f"Starting processing for job {job_id} (file: {file_url})")
     redis_key = f"job:{job_id}"
+    
+    # Track start time for timeout enforcement
+    from datetime import datetime
+    start_time = datetime.utcnow()
 
     try:
+        # Check for cancellation before starting
+        if _is_job_cancelled(redis_client, redis_key):
+            logger.info(f"Job {job_id} was cancelled. Exiting.")
+            return
+        
         # 1. Update status to processing
-        _update_job_status(redis_client, redis_key, 'processing')
+        _update_job_status(redis_client, redis_key, 'processing', start_time=start_time)
         
         # 2. Download/Ensure local file
         try:
@@ -100,6 +110,15 @@ def process_job(redis_client, job_payload):
             logger.error(f"Error during parsing/extraction: {e}")
             # If we haven't set text_extract, maybe set error as issue
             issues.append(f"Parsing error: {str(e)}")
+        
+        # Check for cancellation and timeout after parsing
+        if _is_job_cancelled(redis_client, redis_key):
+            logger.info(f"Job {job_id} was cancelled during parsing.")
+            return
+        
+        if _check_timeout(redis_client, redis_key, start_time, job_id):
+            logger.warning(f"Job {job_id} timed out during parsing.")
+            return
             
         # Check if we have a DataFrame to process
         if df is None or df.empty:
@@ -111,6 +130,11 @@ def process_job(redis_client, job_payload):
              return
 
         logger.info(f"Parsed DataFrame: {df.shape}")
+        
+        # Check again before analysis
+        if _is_job_cancelled(redis_client, redis_key):
+            logger.info(f"Job {job_id} was cancelled before analysis.")
+            return
         
         # 4. Analysis
         schema = analysis.generate_schema(df)
@@ -175,15 +199,62 @@ def process_job(redis_client, job_payload):
         
     except Exception as e:
         logger.error(f"Error processing job {job_id}: {e}", exc_info=True)
-        _fail_job(redis_client, redis_key, str(e))
-        # Don't re-raise if we want the worker to keep running, but worker catches generic exception.
-        # Reraise so worker logs it fully if needed
-        raise e
+        
+        # Check if job was cancelled during processing
+        if _is_job_cancelled(redis_client, redis_key):
+            logger.info(f"Job {job_id} was cancelled during processing.")
+            return
+        
+        # Save error.json and fail the job
+        _fail_job_with_error_json(redis_client, redis_key, job_id, str(e), "processing_error")
+        # Don't re-raise - let worker continue
 
-def _update_job_status(redis_client, key, status):
+def _is_job_cancelled(redis_client, key):
+    """Check if job has been cancelled."""
+    try:
+        data = _get_job_data(redis_client, key)
+        return data.get('status') == 'cancelled'
+    except:
+        return False
+
+def _check_timeout(redis_client, key, start_time, job_id):
+    """
+    Check if job has exceeded timeout.
+    Returns True if timed out (and updates job status), False otherwise.
+    """
+    try:
+        data = _get_job_data(redis_client, key)
+        timeout_at_str = data.get('timeoutAt')
+        
+        if not timeout_at_str:
+            return False
+        
+        from datetime import datetime
+        timeout_at = datetime.fromisoformat(timeout_at_str.replace('Z', '+00:00'))
+        now = datetime.utcnow()
+        
+        if now > timeout_at.replace(tzinfo=None):
+            logger.warning(f"Job {job_id} has timed out")
+            _fail_job_with_error_json(
+                redis_client, key, job_id,
+                "Job exceeded maximum processing time",
+                "timeout"
+            )
+            return True
+        
+        return False
+    except Exception as e:
+        logger.error(f"Error checking timeout: {e}")
+        return False
+
+def _update_job_status(redis_client, key, status, start_time=None):
     current = _get_job_data(redis_client, key)
     current['status'] = status
     current['updatedAt'] = datetime.utcnow().isoformat() + "Z"
+    
+    if start_time and status == 'processing':
+        current['startedAt'] = start_time.isoformat() + "Z"
+    
     redis_client.set(key, json.dumps(current))
 
 def _complete_job(redis_client, key, result_url):
@@ -194,11 +265,63 @@ def _complete_job(redis_client, key, result_url):
     redis_client.set(key, json.dumps(current))
 
 def _fail_job(redis_client, key, error_msg):
+    """Simple fail without error.json (for backwards compatibility)"""
     current = _get_job_data(redis_client, key)
     current['status'] = 'failed'
-    current['error'] = error_msg
+    current['error'] = 'processing_error'
+    current['errorMessage'] = error_msg
     current['updatedAt'] = datetime.utcnow().isoformat() + "Z"
     redis_client.set(key, json.dumps(current))
+
+def _fail_job_with_error_json(redis_client, key, job_id, error_message, error_code):
+    """
+    Fail job and save error.json to blob storage.
+    
+    Args:
+        redis_client: Redis client
+        key: Job Redis key
+        job_id: Job ID
+        error_message: Human-readable error message
+        error_code: Short error code (e.g., 'timeout', 'blob_upload_failed', etc.)
+    """
+    try:
+        # Create error.json
+        error_data = {
+            "jobId": job_id,
+            "status": "failed",
+            "error": error_code,
+            "message": error_message,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        
+        # Save error.json to blob
+        error_json_str = json.dumps(error_data, indent=2)
+        error_stream = io.BytesIO(error_json_str.encode('utf-8'))
+        
+        try:
+            error_url = storage.save_file_to_blob(error_stream, "error.json", job_id)
+        except Exception as e:
+            logger.error(f"Failed to save error.json for job {job_id}: {e}")
+            error_url = None
+        
+        # Update job status
+        current = _get_job_data(redis_client, key)
+        current['status'] = 'failed'
+        current['error'] = error_code
+        current['errorMessage'] = error_message
+        current['updatedAt'] = datetime.utcnow().isoformat() + "Z"
+        
+        if error_url:
+            current['resultUrl'] = error_url
+        
+        redis_client.set(key, json.dumps(current))
+        
+        logger.info(f"Job {job_id} failed with error: {error_code}")
+        
+    except Exception as e:
+        logger.error(f"Error in _fail_job_with_error_json: {e}")
+        # Fallback to simple fail
+        _fail_job(redis_client, key, error_message)
 
 def _get_job_data(redis_client, key):
     data_str = redis_client.get(key)
