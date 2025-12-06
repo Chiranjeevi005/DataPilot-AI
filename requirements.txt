@@ -1,3 +1,7 @@
 flask
 redis
 requests
+pandas
+numpy
+openpyxl
+python-dateutil
