@@ -193,7 +193,6 @@ export default function LoadingState({ currentStep, onCancel }: LoadingStateProp
                             className="w-full md:w-auto md:min-w-[200px] h-12 md:h-10 text-base md:text-sm font-medium shadow-lg md:shadow-none rounded-xl md:rounded-lg mx-auto block"
                             onClick={onCancel}
                         >
-                            <XCircle className="w-5 h-5 mr-2" />
                             Cancel Job
                         </Button>
                     </div>

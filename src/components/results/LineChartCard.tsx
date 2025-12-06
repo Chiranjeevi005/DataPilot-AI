@@ -16,15 +16,16 @@ interface LineChartCardProps {
     xKey: string;
     yKey: string;
     annotations?: Annotation[];
+    title?: string;
 }
 
-export default function LineChartCard({ data, xKey, yKey, annotations }: LineChartCardProps) {
+export default function LineChartCard({ data, xKey, yKey, annotations, title = "Trend Analysis" }: LineChartCardProps) {
     const { showToast } = useToast();
 
     return (
         <div className="bg-datapilot-card rounded-[12px] shadow-soft p-6 border border-datapilot-border flex flex-col h-[320px] transition-all hover:shadow-card-hover group relative">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="text-datapilot-text font-semibold text-lg font-sans">Sales Trend</h3>
+                <h3 className="text-datapilot-text font-semibold text-lg font-sans">{title}</h3>
                 <button
                     onClick={() => showToast("Downloading chart as PNG...", "info")}
                     className="text-datapilot-muted hover:text-datapilot-primary transition-colors p-1 rounded-md hover:bg-slate-50"

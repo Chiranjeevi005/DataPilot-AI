@@ -6,10 +6,13 @@ from typing import Dict, Any, Optional
 import openai
 
 try:
+    from lib.llm import format_enforcer, validator
     from .retry import retry_http_call
 except ImportError:
+    from lib.llm import format_enforcer, validator
     from retry import retry_http_call
 
+# Initialize logger
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -139,6 +142,9 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
     prompt = prompt.replace("{{SCHEMA}}", json.dumps(schema, indent=2))
     prompt = prompt.replace("{{KPIS}}", json.dumps(kpis, indent=2))
     prompt = prompt.replace("{{PREVIEW}}", json.dumps(preview, indent=2))
+    
+    # Enforce detailed JSON format
+    prompt = format_enforcer.wrap_prompt(prompt)
 
     # 5. Make LLM Call with Retry
     def _make_llm_call():
@@ -159,11 +165,11 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
         
         # Parse JSON
         try:
-            cleaned_text = text_response.replace("```json", "").replace("```", "").strip()
-            result = json.loads(cleaned_text)
+            # Clean and Parse
+            result = format_enforcer.enforce_json_format(text_response)
             
-            # Normalize
-            normalized_result = _normalize_insights(result)
+            # Validate Data Structure
+            normalized_result = validator.validate_llm_result(result)
             
             normalized_result["_meta"] = {
                 "model": model_name,
@@ -196,70 +202,7 @@ def generate_insights(file_info: Dict, schema: Any, kpis: Dict, preview: Any) ->
         _record_llm_failure()
         return _get_fallback_response(f"llm_failure_fallback: {str(e)}")
 
-def _normalize_insights(raw_json: Dict) -> Dict[str, Any]:
-    """
-    Ensure the output matches the strict schema:
-    {
-      "analystInsights": [ { "id": "i1", "text": "...", "evidence": {...} } ],
-      "businessSummary": [ "...", ... ]
-    }
-    """
-    # 1. Business Summary
-    summary = raw_json.get("businessSummary", [])
-    if not isinstance(summary, list):
-        summary = []
-    # Clean strings
-    summary = [str(s) for s in summary if s]
-
-    # 2. Insights
-    raw_insights = raw_json.get("analystInsights", [])
-    if not isinstance(raw_insights, list):
-        if isinstance(raw_insights, dict):
-            # Try to recover if it returned an object
-            raw_insights = [raw_insights]
-        else:
-            raw_insights = []
-
-    normalized_insights = []
-    for idx, item in enumerate(raw_insights):
-        if not isinstance(item, dict):
-            continue
-            
-        # Stable ID
-        insight_id = f"i{idx+1}"
-        text = str(item.get("text", "Insight description missing"))
-        
-        # Evidence Normalization
-        raw_evidence = item.get("evidence", {})
-        if not isinstance(raw_evidence, dict):
-             raw_evidence = {}
-             
-        evidence = {
-            "aggregates": raw_evidence.get("aggregates", {}),
-            "row_indices": raw_evidence.get("row_indices", [])
-        }
-        
-        # Validate row indices are integers
-        valid_indices = []
-        if isinstance(evidence["row_indices"], list):
-            for i in evidence["row_indices"]:
-                try:
-                    valid_indices.append(int(i))
-                except:
-                    pass
-        evidence["row_indices"] = valid_indices
-
-        normalized_insights.append({
-            "id": insight_id,
-            "text": text,
-            "evidence": evidence
-        })
-
-    return {
-        "analystInsights": normalized_insights,
-        "businessSummary": summary,
-        "issues": []
-    }
+# Normalization logic moved to validator.py
 
 def _get_mock_response() -> Dict[str, Any]:
     return {

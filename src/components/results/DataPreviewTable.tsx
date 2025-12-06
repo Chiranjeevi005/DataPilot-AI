@@ -8,6 +8,7 @@ import { useToast } from '../ui/ToastContext';
 
 interface DataPreviewTableProps {
     data?: any[];
+    schema?: any[];
 }
 
 // Mock 10 rows if no data provided, or allow realistic data
@@ -21,13 +22,19 @@ const MOCK_DATA = Array.from({ length: 15 }).map((_, i) => ({
     status: i === 2 ? 'Pending' : 'Completed' // referencing mock insight row 2
 }));
 
-export default function DataPreviewTable({ data = MOCK_DATA }: DataPreviewTableProps) {
+export default function DataPreviewTable({ data, schema }: DataPreviewTableProps) {
     const { highlightedRowIndex, clearHighlight } = useEvidenceHighlight();
     const { showToast } = useToast();
     const tableRef = useRef<HTMLDivElement>(null);
     const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
-    const columns = ['Date', 'Category', 'Region', 'Sales', 'Units', 'Status'];
-    const [qualityState, setQualityState] = useState(columns.map((_, i) => (i === 4 ? 'warning' : 'good')));
+
+    // Determine columns
+    const effectiveData = data && data.length > 0 ? data : MOCK_DATA;
+    const columns = schema
+        ? schema.map(c => c.name)
+        : (effectiveData.length > 0 ? Object.keys(effectiveData[0]).filter(k => k !== 'id' && k !== 'sparklineData') : []);
+
+    const [qualityState, setQualityState] = useState(columns.map((_, i) => 'good'));
 
     // Auto-scroll to highlight
     useEffect(() => {
@@ -58,7 +65,7 @@ export default function DataPreviewTable({ data = MOCK_DATA }: DataPreviewTableP
             <div className="p-4 border-b border-datapilot-border flex justify-between items-center bg-slate-50/50">
                 <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-datapilot-text">Data Preview</h3>
-                    <span className="text-xs text-datapilot-muted font-mono bg-white px-2 py-0.5 rounded border border-datapilot-border">{data.length} rows</span>
+                    <span className="text-xs text-datapilot-muted font-mono bg-white px-2 py-0.5 rounded border border-datapilot-border">{effectiveData.length} rows</span>
                 </div>
                 <div className="flex gap-2">
                     <button
@@ -94,7 +101,7 @@ export default function DataPreviewTable({ data = MOCK_DATA }: DataPreviewTableP
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-datapilot-border">
-                            {data.map((row, idx) => {
+                            {effectiveData.map((row, idx) => {
                                 const isHighlighted = highlightedRowIndex === idx;
                                 return (
                                     <tr
@@ -105,7 +112,7 @@ export default function DataPreviewTable({ data = MOCK_DATA }: DataPreviewTableP
                                             isHighlighted && "highlight-row"
                                         )}
                                         onClick={() => {
-                                            isHighlighted && clearHighlight();
+                                            if (isHighlighted) clearHighlight();
                                             showToast(`Row ${idx} selected`, 'info');
                                         }}
                                     >
@@ -114,19 +121,11 @@ export default function DataPreviewTable({ data = MOCK_DATA }: DataPreviewTableP
                                             {!isHighlighted && <Search className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 mx-auto cursor-pointer" />}
                                         </td>
                                         <td className="px-4 py-3 text-datapilot-muted font-mono text-xs">{idx}</td>
-                                        <td className="px-4 py-3 text-datapilot-text">{row.date}</td>
-                                        <td className="px-4 py-3 text-datapilot-text">{row.category}</td>
-                                        <td className="px-4 py-3 text-datapilot-text">{row.region}</td>
-                                        <td className="px-4 py-3 font-semibold text-datapilot-text">${row.sales}</td>
-                                        <td className="px-4 py-3 text-datapilot-text text-center">{row.units}</td>
-                                        <td className="px-4 py-3">
-                                            <span className={clsx(
-                                                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                                                row.status === 'Completed' ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-                                            )}>
-                                                {row.status}
-                                            </span>
-                                        </td>
+                                        {columns.map(col => (
+                                            <td key={col} className="px-4 py-3 text-datapilot-text max-w-[200px] truncate">
+                                                {String(row[col] ?? '')}
+                                            </td>
+                                        ))}
                                     </tr>
                                 );
                             })}
@@ -134,16 +133,18 @@ export default function DataPreviewTable({ data = MOCK_DATA }: DataPreviewTableP
                     </table>
                 ) : (
                     <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {data.map((row, idx) => (
+                        {effectiveData.map((row, idx) => (
                             <div key={idx} className={clsx("bg-white p-4 rounded-lg border shadow-sm hover:shadow-md transition-all", highlightedRowIndex === idx && "ring-2 ring-datapilot-orange")}>
                                 <div className="flex justify-between mb-2">
                                     <span className="text-xs font-mono text-datapilot-muted">Row {idx}</span>
-                                    <span className={clsx("text-[10px] px-2 rounded-full", row.status === 'Completed' ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800")}>{row.status}</span>
                                 </div>
                                 <div className="space-y-1">
-                                    <div className="flex justify-between text-sm"><span className="text-slate-500">Date:</span> <span>{row.date}</span></div>
-                                    <div className="flex justify-between text-sm"><span className="text-slate-500">Category:</span> <span>{row.category}</span></div>
-                                    <div className="flex justify-between text-sm"><span className="text-slate-500">Sales:</span> <span className="font-semibold">${row.sales}</span></div>
+                                    {columns.slice(0, 5).map(col => (
+                                        <div key={col} className="flex justify-between text-sm">
+                                            <span className="text-slate-500">{col}:</span>
+                                            <span className="font-semibold text-datapilot-text truncate max-w-[120px]">{String(row[col] ?? '')}</span>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         ))}

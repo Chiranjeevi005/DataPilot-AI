@@ -8,13 +8,13 @@ import { clsx } from 'clsx';
 interface KpiCardProps {
     title: string;
     value: string;
-    delta: string;
+    delta?: string;
     deltaType: 'pos' | 'neg' | 'neutral';
-    sparklineData: { value: number }[];
+    sparklineData?: { value: number }[];
     progressValue?: number; // 0-100
 }
 
-export default function KpiCard({ title, value, delta, deltaType, sparklineData, progressValue }: KpiCardProps) {
+export default function KpiCard({ title, value, delta, deltaType, sparklineData = [], progressValue }: KpiCardProps) {
     const isPos = deltaType === 'pos';
     const isNeg = deltaType === 'neg';
 

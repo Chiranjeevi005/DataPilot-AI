@@ -5,13 +5,13 @@ import io
 import traceback
 from datetime import datetime
 
-# Adjust import based on how the worker is run. 
 try:
     from lib import storage, analysis, pdf_extractor, json_normalize_helper, llm_client
+    from lib.analysis.transform_to_ui import transform_to_ui
     from observability import log_info, log_error, log_exception, increment, observe, on_job_start, on_job_end
 except ImportError:
-    # Fallback for relative imports if needed
     from ..lib import storage, analysis, pdf_extractor, json_normalize_helper, llm_client
+    from ..lib.analysis.transform_to_ui import transform_to_ui
     from ..observability import log_info, log_error, log_exception, increment, observe, on_job_start, on_job_end
 
 COMPONENT = "process_job"
@@ -86,7 +86,7 @@ def process_job(redis_client, job_payload):
                      if score > 0:
                          df = best_df
                      else:
-                         logger.info("PDF table found but score is 0. Treating as non-tabular.")
+                         log_info(COMPONENT, "PDF table found but score is 0. Treating as non-tabular.", job_id=job_id, step="parse")
                 
                 if df is None:
                     # Text fallback
@@ -186,55 +186,31 @@ def process_job(redis_client, job_payload):
             # Re-raise to trigger fallback handling
             raise
         
-        # Gap 2: Flattened Structure (Gap Fixing)
-        # insights_data is now normalized by llm_client to contain:
-        # { "analystInsights": [...], "businessSummary": [...], "issues": [...] }
-        
-        analyst_insights = insights_data.get("analystInsights", [])
-        business_summary = insights_data.get("businessSummary", [])
-        
-        if "issues" in insights_data:
-             for issue in insights_data["issues"]:
-                  issues.append(f"LLM: {issue}")
-
-        # 5. Construct Result
-        result_data = {
-            "jobId": job_id,
-            "fileInfo": { 
-                "name": file_name or "unknown", 
-                "rows": kpis.get('rowCount', 0), 
-                "cols": kpis.get('colCount', 0), 
-                "type": file_type
-            },
-            "schema": schema,
-            # Transform KPI dict to list for frontend
-            "kpis": [
-                {"title": "Total Rows", "value": kpis.get('rowCount', 0), "trend": "neutral"},
-                {"title": "Columns", "value": kpis.get('colCount', 0), "trend": "neutral"},
-                {"title": "Missing Values", "value": kpis.get('missingCount', 0), "trend": "down" if kpis.get('missingCount', 0) > 0 else "neutral"},
-                {"title": "Duplicates", "value": kpis.get('duplicateCount', 0), "trend": "down" if kpis.get('duplicateCount', 0) > 0 else "neutral"}
-            ],
-            "cleanedPreview": preview,
-            "insights": [
-                *[{
-                    "id": i.get("id"),
-                    "title": "Analyst Finding",
-                    "explanation": i.get("text"),
-                    "evidence": json.dumps(i.get("evidence")),
-                    "type": "analyst"
-                } for i in analyst_insights],
-                *[{
-                    "id": f"bs_{idx}",
-                    "title": "Key Takeaway",
-                    "explanation": item,
-                    "type": "business"
-                } for idx, item in enumerate(business_summary)]
-            ],
-            "chartSpecs": chart_specs,
-            "qualityScore": quality_score,
-            "issues": issues, 
-            "processedAt": datetime.utcnow().isoformat() + "Z"
-        }
+        # 5. Construct Result using Canonical Transformer
+        try:
+             result_data = transform_to_ui(
+                 job_id=job_id,
+                 raw_schema=schema,
+                 raw_kpis=kpis,
+                 cleaned_preview=preview,
+                 chart_specs=chart_specs,
+                 llm_result=insights_data,
+                 quality_score=quality_score
+             )
+             
+             # Add file info (not in generic transformer but needed for specific logic if any? 
+             # Actually transform_to_ui covers shared types. 
+             # If we need fileInfo in the root, we might need to extend transform_to_ui or add it here.
+             # The Interface 'AnalysisResult' in types/analysis.ts DOES NOT have 'fileInfo'.
+             # It implies the frontend uses what's in 'kpis' or 'schema'. 
+             # However, process_job usually provided 'fileInfo'.
+             # Let's check types/analysis.ts again.
+             # It does NOT have fileInfo. It has kpis.
+             # So we stick to the transformer output.
+             pass
+        except Exception as e:
+             log_error(COMPONENT, f"Transformation failed: {e}", job_id=job_id, step="transform")
+             raise e
         
         # 6. Save result
         log_info(COMPONENT, "Writing result.json", job_id=job_id, step="write_result")

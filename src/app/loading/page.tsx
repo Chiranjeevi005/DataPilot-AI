@@ -21,29 +21,26 @@ export default function LoadingPage() {
 
     useEffect(() => {
         if (!jobId) {
-            // router.push('/upload'); // Commented out for dev ease, strictly should redirect
+            // router.push('/upload');
             return;
         }
 
         const pollStatus = async () => {
             try {
-                const { data } = await axios.get(`/api/job-status/${jobId}`);
-                if (data.status === 'completed') {
-                    // Fetch results
-                    updateJobStatus('completed', 5); // All steps done
-                    const resultRes = await axios.get(data.resultUrl);
-                    setResults(resultRes.data);
+                // Correct API call using query param
+                const { data } = await axios.get(`/api/job-status?jobId=${jobId}`);
 
-                    // Add significant delay before redirect to show off the "100%" state
+                if (data.status === 'completed') {
+                    updateJobStatus('completed', 5);
                     setTimeout(() => {
-                        router.push('/results');
-                    }, 1500);
-                } else {
-                    // Determine step based on time or random for demo
-                    // Since this is mock, let's increment step every 2 seconds roughly
+                        router.push(`/results?jobId=${jobId}`);
+                    }, 500);
+                } else if (data.status === 'failed') {
+                    updateJobStatus('error', 5);
+                    router.push(`/results?jobId=${jobId}`);
                 }
             } catch (err) {
-                console.error(err);
+                console.error("Poll error:", err);
             }
         };
 
@@ -60,7 +57,7 @@ export default function LoadingPage() {
             clearInterval(interval);
             clearInterval(stepInterval);
         };
-    }, [jobId, router, setResults, updateJobStatus]);
+    }, [jobId, router, updateJobStatus]);
 
     return (
         <div className="min-h-screen bg-background font-sans text-slate-900">

@@ -7,14 +7,15 @@ interface BarChartCardProps {
     data: any[];
     xKey: string;
     yKey: string;
+    title?: string;
 }
 
-export default function BarChartCard({ data, xKey, yKey }: BarChartCardProps) {
+export default function BarChartCard({ data, xKey, yKey, title = "Category Analysis" }: BarChartCardProps) {
     return (
         <div className="bg-datapilot-card rounded-[12px] shadow-soft p-6 border border-datapilot-border flex flex-col h-[320px] transition-all hover:shadow-card-hover group">
             <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-datapilot-text font-semibold text-lg font-sans">Sales by Category</h3>
+                    <h3 className="text-datapilot-text font-semibold text-lg font-sans">{title}</h3>
                 </div>
                 <div className="flex gap-2">
                     <span className="text-xs font-medium px-2 py-1 bg-datapilot-page text-datapilot-muted rounded-full border border-datapilot-border">Top Categories</span>
