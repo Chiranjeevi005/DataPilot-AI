@@ -36,7 +36,7 @@ export default function Hero() {
                     <div className="flex flex-col sm:flex-row gap-4 mt-2">
                         <Link href="/upload" className="h-14 px-8 rounded-full bg-slate-900 text-white font-medium hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200 hover:-translate-y-1 text-lg group">
                             <UploadCloud size={22} className="text-blue-400" />
-                            <span>Start Analyzing Free</span>
+                            <span>Start Analyzing</span>
                             <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                         </Link>
                     </div>

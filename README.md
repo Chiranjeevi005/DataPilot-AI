@@ -1035,3 +1035,244 @@ LLM_CIRCUIT_COOLDOWN=600
 **Documentation**: See `docs/finetune_playbook.md` for complete fine-tuning guide.
 
 ---
+
+## Cleanup & Retention Subsystem
+
+DataPilot AI includes an automated cleanup system that removes temporary uploads, results, and Redis job keys older than a configurable TTL (Time-To-Live). This ensures efficient storage usage, protects user privacy, and maintains system performance.
+
+### Features
+
+- **Automated Cleanup**: Scheduled job runs daily (configurable) to remove old data
+- **TTL-Based Retention**: Configurable retention period (default: 24 hours)
+- **Dry-Run Mode**: Safe testing without actual deletion
+- **Audit Trail**: Every run creates a detailed audit log
+- **Batch Limits**: Prevents runaway deletion with configurable batch size
+- **Safety Guardrails**: Multiple validation checks prevent accidental data loss
+- **Health Monitoring**: Health check endpoint for system status
+- **Idempotent**: Safe to run multiple times
+
+### What Gets Cleaned
+
+1. **Upload Files**: `uploads/{jobId}/*` - User-uploaded files
+2. **Result Files**: `results/{jobId}.json` and `results/{jobId}_error.json`
+3. **Redis Job Keys**: `job:{jobId}` - Job metadata and status
+
+### Quick Start
+
+#### 1. Configuration
+
+Add to `.env`:
+
+```bash
+# Retention Configuration
+JOB_TTL_HOURS=24                              # How long to keep data
+CLEANER_DRY_RUN=true                          # Dry-run mode (safety)
+CLEANER_CRON_SCHEDULE="0 3 * * *"            # Daily at 3 AM UTC
+CLEANER_MAX_DELETE_BATCH=500                  # Max items per run
+
+# Safety Settings
+MIN_TTL_HOURS=1                               # Minimum allowed TTL
+BLOB_PATH_PREFIXES="uploads/,results/"        # Paths to clean
+CLEANER_AUDIT_BLOB_PATH="maintenance/cleaner_runs/"
+CLEANER_LOG_LEVEL=INFO
+```
+
+#### 2. Manual Run (Dry-Run)
+
+Test the cleaner without deleting anything:
+
+```bash
+# Dry-run mode (safe)
+python -m src.maintenance.cron_entry
+```
+
+Check the audit log:
+```bash
+cat tmp_uploads/maintenance/cleaner_runs/cleaner_*.json | tail -1 | python -m json.tool
+```
+
+#### 3. Enable Destructive Deletion
+
+⚠️ **Warning**: This will permanently delete data!
+
+```bash
+# Edit .env
+CLEANER_DRY_RUN=false
+
+# Run cleaner
+python -m src.maintenance.cron_entry
+```
+
+**Best Practice**: Run in dry-run mode for at least 7 days before enabling destructive deletion.
+
+### Scheduled Job Setup
+
+#### For Antigravity Platform
+
+Add to `antigravity.yaml`:
+
+```yaml
+scheduled_jobs:
+  - name: datapilot-cleanup
+    schedule: "0 3 * * *"  # Daily at 3 AM UTC
+    command: python -m src.maintenance.cron_entry
+    runtime: python3.11
+    timeout: 600
+    environment:
+      REDIS_URL: ${REDIS_URL}
+      JOB_TTL_HOURS: "24"
+      CLEANER_DRY_RUN: "true"
+```
+
+#### For Standard Cron (Linux/Mac)
+
+```bash
+# Add to crontab
+0 3 * * * cd /path/to/datapilot-ai && python -m src.maintenance.cron_entry >> /var/log/datapilot-cleanup.log 2>&1
+```
+
+#### For Windows Task Scheduler
+
+1. Open Task Scheduler
+2. Create Basic Task: "DataPilot AI Cleanup"
+3. Trigger: Daily at 3:00 AM
+4. Action: `python -m src.maintenance.cron_entry`
+5. Start in: `C:\path\to\datapilot-ai`
+
+### Testing
+
+Run the complete test suite:
+
+```bash
+# Create fake test data
+python scripts/test_cleaner_create_fake_data.py
+
+# Run full test suite (dry-run + destructive)
+pwsh scripts/test_cleaner_run.sh
+
+# Run edge case tests (validation, idempotency, etc.)
+pwsh scripts/test_cleaner_edgecases.sh
+```
+
+**Test Coverage**:
+- ✅ Dry-run doesn't delete data
+- ✅ Destructive mode deletes old data only
+- ✅ Recent data is preserved
+- ✅ Redis keys cleaned correctly
+- ✅ Audit logs created
+- ✅ TTL validation enforced
+- ✅ Prefix validation enforced
+- ✅ Batch limits respected
+- ✅ Error handling continues processing
+
+### Health Check
+
+Monitor cleanup subsystem health:
+
+```bash
+python -m src.maintenance.health_check
+```
+
+Returns JSON status:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-12-06T12:00:00Z",
+  "checks": {
+    "redis": {"ok": true, "message": "Redis connection successful"},
+    "blobPermissions": {"ok": true, "message": "Blob listing successful"}
+  },
+  "lastCleanerRun": {
+    "completedAt": "2025-12-06T03:00:15Z",
+    "deletedBlobs": 45,
+    "deletedKeys": 30,
+    "errors": 0,
+    "dryRun": true
+  }
+}
+```
+
+### Audit Logs
+
+Every cleanup run creates an audit log:
+
+**Location**: `tmp_uploads/maintenance/cleaner_runs/cleaner_{timestamp}.json`
+
+**Format**:
+```json
+{
+  "runId": "cleaner_20251206_030000",
+  "startedAt": "2025-12-06T03:00:00Z",
+  "completedAt": "2025-12-06T03:00:15Z",
+  "dryRun": true,
+  "ttlHours": 24,
+  "totalBlobsScanned": 150,
+  "deletedBlobs": 45,
+  "totalKeysScanned": 100,
+  "deletedKeys": 30,
+  "skipped": [],
+  "errors": []
+}
+```
+
+### Safety Features
+
+1. **Dry-Run Default**: Defaults to `CLEANER_DRY_RUN=true` for safety
+2. **Minimum TTL**: Prevents TTL < `MIN_TTL_HOURS` (default: 1 hour)
+3. **Path Validation**: Requires `uploads/` and `results/` in `BLOB_PATH_PREFIXES`
+4. **Batch Limits**: Max `CLEANER_MAX_DELETE_BATCH` items per run
+5. **Error Isolation**: If one deletion fails, others continue
+6. **Idempotency**: Safe to run multiple times
+
+### Troubleshooting
+
+#### No Data Being Deleted
+
+1. Check `CLEANER_DRY_RUN=false` if you want actual deletion
+2. Verify data is older than `JOB_TTL_HOURS`
+3. Review audit logs
+
+#### Permission Errors
+
+1. Check storage directory permissions
+2. Verify Redis connectivity
+3. Run health check: `python -m src.maintenance.health_check`
+
+#### Too Much Data Being Deleted
+
+1. Increase `JOB_TTL_HOURS`
+2. Check system clock is correct (UTC)
+3. Review audit logs for unexpected deletions
+
+### Documentation
+
+- **Complete Guide**: `docs/retention_policy.md`
+- **Scheduled Jobs**: `docs/scheduled_jobs.md`
+
+### Environment Variables Reference
+
+```bash
+# Retention Configuration
+JOB_TTL_HOURS=24                              # Retention period
+MIN_TTL_HOURS=1                               # Minimum TTL (safety)
+BLOB_PATH_PREFIXES="uploads/,results/"        # Paths to clean
+
+# Cleanup Schedule
+CLEANER_CRON_SCHEDULE="0 3 * * *"            # Cron schedule
+CLEANER_DRY_RUN=true                          # Dry-run mode
+CLEANER_LOG_LEVEL=INFO                        # Log verbosity
+CLEANER_MAX_DELETE_BATCH=500                  # Max deletions per run
+
+# Audit Trail
+CLEANER_AUDIT_BLOB_PATH="maintenance/cleaner_runs/"
+```
+
+### Best Practices
+
+1. **Start with dry-run**: Test with `CLEANER_DRY_RUN=true` for at least 7 days
+2. **Monitor audit logs**: Review logs regularly for the first week
+3. **Set appropriate TTL**: Balance storage costs with user needs
+4. **Schedule off-peak**: Run cleanup during low-traffic hours
+5. **Alert on errors**: Set up monitoring for cleanup failures
+
+---
