@@ -76,12 +76,7 @@ export default function DataPreviewTable({ data, schema }: DataPreviewTableProps
                     >
                         <StretchHorizontal className="w-3 h-3 mr-1.5" /> {viewMode === 'table' ? 'Card View' : 'Table View'}
                     </button>
-                    <button
-                        onClick={() => showToast("Full Screen Table not implemented in demo.", "info")}
-                        className="flex items-center text-xs font-medium text-white bg-datapilot-primary hover:bg-blue-600 px-3 py-1.5 rounded-lg shadow-sm transition-colors"
-                    >
-                        <Maximize2 className="w-3 h-3 mr-1.5" /> Full Table
-                    </button>
+
                 </div>
             </div>
 

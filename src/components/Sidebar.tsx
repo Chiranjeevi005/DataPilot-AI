@@ -2,14 +2,17 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Settings, FileText, BarChart2, Table, Search, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, Settings, FileText, BarChart2, Table, Search, X, Clock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSidebarStore } from '@/lib/store';
+import { useSidebarStore, useAppStore } from '@/lib/store';
 
 export default function Sidebar() {
     const isOpen = useSidebarStore((state) => state.isOpen);
     const closeSidebar = useSidebarStore((state) => state.close);
     const openSidebar = useSidebarStore((state) => state.open);
+    const recentUploads = useAppStore((state) => state.recentUploads);
+    const router = useRouter();
 
     // Initial State: Open on Desktop/Tablet, Closed on Mobile
     useEffect(() => {
@@ -18,16 +21,50 @@ export default function Sidebar() {
         }
     }, [openSidebar]);
 
-    const recentFiles = [
-        { name: 'sales_oct.csv', type: 'csv', time: '2h ago' },
-        { name: 'invoices.pdf', type: 'pdf', time: '5h ago' },
-        { name: 'users.json', type: 'json', time: '1d ago' },
-    ];
-
     const getBadgeClass = (type: string) => {
         if (type === 'csv') return 'text-emerald-700 bg-emerald-100';
         if (type === 'pdf') return 'text-rose-700 bg-rose-100';
+        if (type === 'xlsx') return 'text-blue-700 bg-blue-100';
         return 'text-amber-700 bg-amber-100';
+    };
+
+    const getRelativeTime = (isoString: string) => {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) return 'just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        return date.toLocaleDateString();
+    };
+
+    const getStatusIcon = (status: 'processing' | 'completed' | 'error') => {
+        switch (status) {
+            case 'processing':
+                return <Loader2 size={12} className="text-blue-500 animate-spin" />;
+            case 'completed':
+                return <CheckCircle2 size={12} className="text-green-500" />;
+            case 'error':
+                return <AlertCircle size={12} className="text-red-500" />;
+        }
+    };
+
+    const handleRecentUploadClick = (jobId: string, status: 'processing' | 'completed' | 'error') => {
+        closeSidebar();
+
+        if (status === 'completed') {
+            router.push(`/results?jobId=${jobId}`);
+        } else if (status === 'processing') {
+            router.push(`/loading?jobId=${jobId}`);
+        } else {
+            // For error status, could navigate to an error page or show a message
+            router.push(`/upload`);
+        }
     };
 
     return (
@@ -98,42 +135,64 @@ export default function Sidebar() {
                 {/* Navigation Items */}
                 <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 px-3 space-y-1">
                     {/* Recent Files Label */}
-                    <div className="md:hidden lg:block px-2 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                        Recent Uploads
+                    <div className="flex items-center justify-between px-2 mb-2">
+                        <div className="md:hidden lg:block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                            Recent Uploads
+                        </div>
+                        {recentUploads.length > 0 && (
+                            <Link
+                                href="/history"
+                                onClick={() => closeSidebar()}
+                                className="md:hidden lg:block text-xs text-primary hover:text-blue-600 font-medium transition-colors"
+                            >
+                                View All
+                            </Link>
+                        )}
                     </div>
 
                     {/* Recent Files List */}
                     <div className="space-y-1 md:space-y-3 lg:space-y-1">
-                        {recentFiles.map((file, i) => (
-                            <button
-                                key={i}
-                                className={cn(
-                                    "flex items-center gap-3 w-full p-2 text-left rounded-lg transition-colors group relative",
-                                    "hover:bg-white hover:shadow-sm md:justify-center lg:justify-start"
-                                )}
-                            >
-                                <div className={cn(
-                                    "w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-bold border border-transparent",
-                                    getBadgeClass(file.type)
-                                )}>
-                                    {file.type.toUpperCase()}
-                                </div>
-
-                                <div className="min-w-0 md:hidden lg:block">
-                                    <div className="text-sm font-medium text-slate-700 truncate group-hover:text-primary">
-                                        {file.name}
+                        {recentUploads.length === 0 ? (
+                            <div className="px-2 py-8 text-center md:hidden lg:block">
+                                <p className="text-sm text-slate-400">No recent uploads</p>
+                                <p className="text-xs text-slate-300 mt-1">Upload a file to get started</p>
+                            </div>
+                        ) : (
+                            recentUploads.map((upload) => (
+                                <button
+                                    key={upload.jobId}
+                                    onClick={() => handleRecentUploadClick(upload.jobId, upload.status)}
+                                    className={cn(
+                                        "flex items-center gap-3 w-full p-2 text-left rounded-lg transition-colors group relative",
+                                        "hover:bg-white hover:shadow-sm md:justify-center lg:justify-start"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-bold border border-transparent",
+                                        getBadgeClass(upload.fileType)
+                                    )}>
+                                        {upload.fileType.toUpperCase()}
                                     </div>
-                                    <div className="text-xs text-slate-400">
-                                        {file.time}
-                                    </div>
-                                </div>
 
-                                {/* Tablet Tooltip */}
-                                <div className="hidden md:block lg:hidden absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
-                                    {file.name}
-                                </div>
-                            </button>
-                        ))}
+                                    <div className="min-w-0 md:hidden lg:block flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <div className="text-sm font-medium text-slate-700 truncate group-hover:text-primary">
+                                                {upload.fileName}
+                                            </div>
+                                            {getStatusIcon(upload.status)}
+                                        </div>
+                                        <div className="text-xs text-slate-400">
+                                            {getRelativeTime(upload.uploadedAt)}
+                                        </div>
+                                    </div>
+
+                                    {/* Tablet Tooltip */}
+                                    <div className="hidden md:block lg:hidden absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                                        {upload.fileName}
+                                    </div>
+                                </button>
+                            ))
+                        )}
                     </div>
                 </div>
 
