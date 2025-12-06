@@ -1276,3 +1276,237 @@ CLEANER_AUDIT_BLOB_PATH="maintenance/cleaner_runs/"
 5. **Alert on errors**: Set up monitoring for cleanup failures
 
 ---
+
+## Observability & Monitoring
+
+DataPilot AI includes a comprehensive observability layer for production monitoring, debugging, and operational insights.
+
+### Features
+
+#### 1. Structured JSON Logging
+All logs follow a consistent JSON format with:
+- UTC ISO-8601 timestamps
+- Component identification
+- Job/request tracking
+- Processing step markers
+- PII masking (emails, phones, IDs)
+
+**Example Log**:
+```json
+{
+  "timestamp": "2025-12-06T12:00:00Z",
+  "level": "INFO",
+  "component": "process_job",
+  "jobId": "job_abc123",
+  "step": "eda",
+  "message": "EDA completed",
+  "extra": {"qualityScore": 85, "rows": 1000}
+}
+```
+
+#### 2. Metrics Collection
+Tracks key performance indicators:
+- **Counters**: jobs_received_total, jobs_completed_total, jobs_failed_total, llm_failures_total, blob_failures_total
+- **Histograms**: avg_processing_time_seconds (with p50, p95, p99 percentiles)
+- Auto-flush to blob storage or local file
+- Configurable flush interval
+
+#### 3. Health Check Endpoint
+`GET /api/health` provides runtime diagnostics:
+- **Redis**: Connectivity check
+- **Blob Storage**: Configuration validation
+- **Worker**: Heartbeat monitoring (< 60s age)
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "components": {
+    "redis": {"status": "ok"},
+    "blob": {"status": "ok"},
+    "worker": {"status": "ok", "details": {"lastHeartbeat": "2025-12-06T12:00:00Z"}}
+  }
+}
+```
+
+#### 4. Worker Heartbeat
+Background thread updates Redis every 30 seconds:
+- Key: `worker:heartbeat`
+- Value: UTC timestamp
+- TTL: 120 seconds
+- Health check validates age < 60 seconds
+
+#### 5. Sentry Integration (Optional)
+Automatic error tracking with:
+- Exception capture with stack traces
+- Context: jobId, step, requestId
+- PII masking before sending
+- Environment tagging
+
+### Setup
+
+#### 1. Basic Configuration
+
+Add to `.env`:
+```bash
+# Logging
+OBSERVABILITY_LOG_LEVEL=INFO              # DEBUG, INFO, WARNING, ERROR
+DEBUG=false                                # Enable debug mode (dev only!)
+
+# Metrics
+METRICS_FLUSH_INTERVAL=10                 # Flush every N jobs
+METRICS_AUTO_FLUSH=true                   # Auto-flush in background
+
+# Worker Heartbeat
+WORKER_HEARTBEAT_INTERVAL=30              # Seconds
+HEALTH_WORKER_MAX_AGE_SECONDS=60          # Max heartbeat age
+
+# Optional: Sentry
+SENTRY_DSN=                                # Leave empty to disable
+ENVIRONMENT=development                    # For Sentry tagging
+```
+
+#### 2. Enable Sentry (Optional)
+
+```bash
+# Install SDK
+pip install sentry-sdk
+
+# Configure DSN
+SENTRY_DSN=https://your-dsn@sentry.io/project-id
+
+# Restart worker
+python src/worker.py
+```
+
+### Usage
+
+#### View Logs
+
+```bash
+# Run worker with JSON output
+python src/worker.py | jq
+
+# Filter by job
+python src/worker.py | jq 'select(.jobId == "job_123")'
+
+# Filter by step
+python src/worker.py | jq 'select(.step == "llm")'
+```
+
+#### Check Health
+
+```bash
+# Start health server
+python src/api/health/route.py
+
+# Check status
+curl http://localhost:5329/api/health | jq
+```
+
+#### View Metrics
+
+```bash
+# Local file
+cat metrics/metrics_snapshot.json | jq
+
+# Check counters
+cat metrics/metrics_snapshot.json | jq '.counters'
+
+# Check processing time stats
+cat metrics/metrics_snapshot.json | jq '.histograms.avg_processing_time_seconds'
+```
+
+### Testing
+
+```bash
+# Test API logging
+python scripts/test_api_logging.py
+
+# Test worker metrics
+python scripts/test_worker_metrics.py
+
+# Test health endpoint
+python scripts/test_health_endpoint.py
+```
+
+### Log Coverage
+
+Each job produces **13+ structured log entries**:
+1. Job dequeued
+2. Job started
+3. Status update
+4. Blob read
+5. File type detection
+6. Parsing
+7. EDA start
+8. EDA completed
+9. LLM start
+10. LLM completed
+11. Result writing
+12. Result saved
+13. Job completed (with duration)
+
+### PII Masking
+
+Automatically masks sensitive data:
+- **Emails**: `john@example.com` → `[EMAIL_MASKED]`
+- **Phones**: `555-123-4567` → `[PHONE_MASKED]`
+- **IDs**: `ABCD12345678` → `[ID_MASKED]`
+
+### Monitoring Best Practices
+
+1. **Health Checks**: Monitor `/api/health` every 60 seconds
+2. **Metrics Review**: Check metrics snapshots daily
+3. **Alert on Failures**: Set up alerts for:
+   - Worker heartbeat stale (> 60s)
+   - Redis connection errors
+   - High failure rates (> 10%)
+4. **Log Aggregation**: Send logs to centralized system (ELK, CloudWatch)
+5. **Sentry Monitoring**: Review errors daily in production
+
+### Documentation
+
+- **Full Guide**: `docs/observability.md`
+- **Quick Reference**: `OBSERVABILITY_QUICK_REFERENCE.md`
+- **Implementation Summary**: `OBSERVABILITY_IMPLEMENTATION_COMPLETE.md`
+
+### Environment Variables Reference
+
+```bash
+# Observability
+SENTRY_DSN=                                # Optional: Sentry DSN
+OBSERVABILITY_LOG_LEVEL=INFO               # Log level
+METRICS_FLUSH_INTERVAL=10                  # Jobs between flushes
+METRICS_AUTO_FLUSH=true                    # Auto-flush enabled
+METRICS_SNAPSHOT_PATH=metrics/metrics_snapshot.json
+DEBUG=false                                 # Debug mode (never in production!)
+WORKER_HEARTBEAT_INTERVAL=30               # Heartbeat interval (seconds)
+HEALTH_WORKER_MAX_AGE_SECONDS=60           # Max heartbeat age (seconds)
+ENVIRONMENT=development                    # Environment name
+```
+
+### Troubleshooting
+
+#### No Logs Appearing
+- Check `OBSERVABILITY_LOG_LEVEL` is set
+- Verify observability module is imported
+- Check stdout/stderr output
+
+#### Metrics Not Saving
+- Verify `METRICS_AUTO_FLUSH=true`
+- Check `METRICS_SNAPSHOT_PATH` is writable
+- Review worker logs for flush errors
+
+#### Worker Showing as Stale
+- Verify worker is running
+- Check Redis connectivity
+- Review `WORKER_HEARTBEAT_INTERVAL` setting
+
+#### Sentry Not Working
+- Verify `SENTRY_DSN` is correct
+- Check `sentry-sdk` is installed
+- Look for initialization message in logs
+
+---
+

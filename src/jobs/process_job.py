@@ -1,6 +1,5 @@
 import json
 import time
-import logging
 import os
 import io
 import traceback
@@ -9,11 +8,13 @@ from datetime import datetime
 # Adjust import based on how the worker is run. 
 try:
     from lib import storage, analysis, pdf_extractor, json_normalize_helper, llm_client
+    from observability import log_info, log_error, log_exception, increment, observe, on_job_start, on_job_end
 except ImportError:
     # Fallback for relative imports if needed
     from ..lib import storage, analysis, pdf_extractor, json_normalize_helper, llm_client
+    from ..observability import log_info, log_error, log_exception, increment, observe, on_job_start, on_job_end
 
-logger = logging.getLogger(__name__)
+COMPONENT = "process_job"
 
 def process_job(redis_client, job_payload):
     """
@@ -25,34 +26,48 @@ def process_job(redis_client, job_payload):
     file_name = job_payload.get('fileName')
 
     if not job_id:
-        logger.error("Job missing jobId, cannot process")
+        log_error(COMPONENT, "Job missing jobId, cannot process", step="validation")
         return
 
-    logger.info(f"Starting processing for job {job_id} (file: {file_url})")
+    log_info(COMPONENT, "Job started", job_id=job_id, step="start", 
+             fileUrl=file_url, fileName=file_name)
+    
     redis_key = f"job:{job_id}"
     
-    # Track start time for timeout enforcement
+    # Track start time for timeout enforcement and metrics
     from datetime import datetime
     start_time = datetime.utcnow()
+    on_job_start(job_id)
 
     try:
         # Check for cancellation before starting
         if _is_job_cancelled(redis_client, redis_key):
-            logger.info(f"Job {job_id} was cancelled. Exiting.")
+            log_info(COMPONENT, "Job was cancelled before processing", 
+                    job_id=job_id, step="cancelled")
             return
         
         # 1. Update status to processing
+        log_info(COMPONENT, "Updating job status to processing", 
+                job_id=job_id, step="status_update")
         _update_job_status(redis_client, redis_key, 'processing', start_time=start_time)
         
         # 2. Download/Ensure local file
+        log_info(COMPONENT, "Reading blob/file", job_id=job_id, step="read_blob", 
+                fileUrl=file_url)
         try:
             local_path = storage.ensure_local_path(file_url)
+            log_info(COMPONENT, "File accessed successfully", job_id=job_id, 
+                    step="read_blob", localPath=local_path)
         except Exception as e:
+            log_error(COMPONENT, f"Failed to access file: {str(e)}", 
+                     job_id=job_id, step="read_blob")
+            increment("blob_failures_total")
             raise Exception(f"Failed to access file: {str(e)}")
 
         # 3. Detect type and parse
         file_type = analysis.detect_file_type(file_name or local_path)
-        logger.info(f"Detected file type: {file_type}")
+        log_info(COMPONENT, "File type detected", job_id=job_id, step="parse", 
+                fileType=file_type)
         
         df = None
         text_extract = None
@@ -66,7 +81,8 @@ def process_job(redis_client, job_payload):
                      # Pick best
                      best_df = max(candidate_dfs, key=pdf_extractor.score_table)
                      score = pdf_extractor.score_table(best_df)
-                     logger.info(f"Selected best PDF table with score {score}")
+                     log_info(COMPONENT, "Selected best PDF table", job_id=job_id, 
+                             step="parse", score=score, tables=len(candidate_dfs))
                      if score > 0:
                          df = best_df
                      else:
@@ -107,17 +123,20 @@ def process_job(redis_client, job_payload):
                     raise ve
 
         except Exception as e:
-            logger.error(f"Error during parsing/extraction: {e}")
+            log_error(COMPONENT, f"Error during parsing/extraction: {e}", 
+                     job_id=job_id, step="parse")
             # If we haven't set text_extract, maybe set error as issue
             issues.append(f"Parsing error: {str(e)}")
         
         # Check for cancellation and timeout after parsing
         if _is_job_cancelled(redis_client, redis_key):
-            logger.info(f"Job {job_id} was cancelled during parsing.")
+            log_info(COMPONENT, "Job was cancelled during parsing", 
+                    job_id=job_id, step="cancelled")
             return
         
         if _check_timeout(redis_client, redis_key, start_time, job_id):
-            logger.warning(f"Job {job_id} timed out during parsing.")
+            log_error(COMPONENT, "Job timed out during parsing", 
+                     job_id=job_id, step="timeout")
             return
             
         # Check if we have a DataFrame to process
@@ -129,28 +148,41 @@ def process_job(redis_client, job_payload):
              _complete_job(redis_client, redis_key, result_url)
              return
 
-        logger.info(f"Parsed DataFrame: {df.shape}")
+        log_info(COMPONENT, "DataFrame parsed successfully", job_id=job_id, 
+                step="parse", rows=df.shape[0], cols=df.shape[1])
         
         # Check again before analysis
         if _is_job_cancelled(redis_client, redis_key):
-            logger.info(f"Job {job_id} was cancelled before analysis.")
+            log_info(COMPONENT, "Job was cancelled before analysis", 
+                    job_id=job_id, step="cancelled")
             return
         
         # 4. Analysis
+        log_info(COMPONENT, "Running EDA", job_id=job_id, step="eda")
         schema = analysis.generate_schema(df)
         kpis = analysis.compute_kpis(df, schema)
         preview = analysis.generate_cleaned_preview(df)
         chart_specs = analysis.generate_chart_specs(df, schema)
         quality_score = analysis.compute_quality_score(df, schema, kpis)
+        log_info(COMPONENT, "EDA completed", job_id=job_id, step="eda", 
+                qualityScore=quality_score)
         
         # Phase 6: LLM Insights
-        logger.info("Generating LLM insights...")
-        insights_data = llm_client.generate_insights(
-            file_info={"name": file_name, "type": file_type}, 
-            schema=schema, 
-            kpis=kpis, 
-            preview=preview
-        )
+        log_info(COMPONENT, "Running LLM for insights", job_id=job_id, step="llm")
+        try:
+            insights_data = llm_client.generate_insights(
+                file_info={"name": file_name, "type": file_type}, 
+                schema=schema, 
+                kpis=kpis, 
+                preview=preview
+            )
+            log_info(COMPONENT, "LLM insights generated", job_id=job_id, step="llm")
+        except Exception as e:
+            log_error(COMPONENT, f"LLM generation failed: {e}", 
+                     job_id=job_id, step="llm")
+            increment("llm_failures_total")
+            # Re-raise to trigger fallback handling
+            raise
         
         # Gap 2: Flattened Structure (Gap Fixing)
         # insights_data is now normalized by llm_client to contain:
@@ -184,29 +216,54 @@ def process_job(redis_client, job_payload):
         }
         
         # 6. Save result
+        log_info(COMPONENT, "Writing result.json", job_id=job_id, step="write_result")
         result_json_str = json.dumps(result_data, indent=2)
         result_stream = io.BytesIO(result_json_str.encode('utf-8'))
-        result_url = storage.save_file_to_blob(result_stream, "result.json", job_id)
+        try:
+            result_url = storage.save_file_to_blob(result_stream, "result.json", job_id)
+            log_info(COMPONENT, "Result saved to blob", job_id=job_id, 
+                    step="write_result", resultUrl=result_url)
+        except Exception as e:
+            log_error(COMPONENT, f"Failed to save result: {e}", 
+                     job_id=job_id, step="write_result")
+            increment("blob_failures_total")
+            raise
         
         # 7. Complete
-        _complete_job(redis_client, redis_key, result_url)
+        duration = on_job_end(job_id)
+        if duration:
+            observe("avg_processing_time_seconds", duration)
+            log_info(COMPONENT, "Job completed successfully", job_id=job_id, 
+                    step="completed", resultUrl=result_url, durationSeconds=duration)
+        else:
+            log_info(COMPONENT, "Job completed successfully", job_id=job_id, 
+                    step="completed", resultUrl=result_url)
         
-        logger.info(f"Job {job_id} completed successfully. Result: {result_url}")
+        _complete_job(redis_client, redis_key, result_url)
+        increment("jobs_completed_total")
         
         # Cleanup local download if it was temporary? 
         # storage.ensure_local_path download logic puts it in a timestamped folder.
         # We might want to clean it up. For now, rely on OS or separate cleanup job to avoid deleting if needed for debugging.
         
     except Exception as e:
-        logger.error(f"Error processing job {job_id}: {e}", exc_info=True)
+        log_exception(COMPONENT, "Error processing job", exc_info=e, 
+                     job_id=job_id, step="failed")
         
         # Check if job was cancelled during processing
         if _is_job_cancelled(redis_client, redis_key):
-            logger.info(f"Job {job_id} was cancelled during processing.")
+            log_info(COMPONENT, "Job was cancelled during processing", 
+                    job_id=job_id, step="cancelled")
             return
+        
+        # Track duration even for failed jobs
+        duration = on_job_end(job_id)
+        if duration:
+            observe("avg_processing_time_seconds", duration)
         
         # Save error.json and fail the job
         _fail_job_with_error_json(redis_client, redis_key, job_id, str(e), "processing_error")
+        increment("jobs_failed_total")
         # Don't re-raise - let worker continue
 
 def _is_job_cancelled(redis_client, key):
@@ -234,17 +291,18 @@ def _check_timeout(redis_client, key, start_time, job_id):
         now = datetime.utcnow()
         
         if now > timeout_at.replace(tzinfo=None):
-            logger.warning(f"Job {job_id} has timed out")
+            log_error(COMPONENT, "Job has timed out", job_id=job_id, step="timeout")
             _fail_job_with_error_json(
                 redis_client, key, job_id,
                 "Job exceeded maximum processing time",
                 "timeout"
             )
+            increment("jobs_failed_total")
             return True
         
         return False
     except Exception as e:
-        logger.error(f"Error checking timeout: {e}")
+        log_error(COMPONENT, f"Error checking timeout: {e}", job_id=job_id, step="timeout")
         return False
 
 def _update_job_status(redis_client, key, status, start_time=None):
@@ -301,7 +359,9 @@ def _fail_job_with_error_json(redis_client, key, job_id, error_message, error_co
         try:
             error_url = storage.save_file_to_blob(error_stream, "error.json", job_id)
         except Exception as e:
-            logger.error(f"Failed to save error.json for job {job_id}: {e}")
+            log_error(COMPONENT, f"Failed to save error.json: {e}", 
+                     job_id=job_id, step="error_save")
+            increment("blob_failures_total")
             error_url = None
         
         # Update job status
@@ -316,10 +376,12 @@ def _fail_job_with_error_json(redis_client, key, job_id, error_message, error_co
         
         redis_client.set(key, json.dumps(current))
         
-        logger.info(f"Job {job_id} failed with error: {error_code}")
+        log_error(COMPONENT, "Job failed", job_id=job_id, step="failed", 
+                 errorCode=error_code, errorMessage=error_message)
         
     except Exception as e:
-        logger.error(f"Error in _fail_job_with_error_json: {e}")
+        log_error(COMPONENT, f"Error in _fail_job_with_error_json: {e}", 
+                 job_id=job_id, step="error_handling")
         # Fallback to simple fail
         _fail_job(redis_client, key, error_message)
 

@@ -2,29 +2,65 @@ import os
 import sys
 import json
 import time
-import logging
 import signal
 import redis
+import threading
 
 # Add src to path so imports work whether run from root or src
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from jobs import process_job
+from observability import log_info, log_error, log_exception, increment, flush_metrics
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger("worker")
+COMPONENT = "worker"
 
 shutdown_requested = False
 current_job_id = None
+heartbeat_thread = None
+
+def update_heartbeat(redis_client):
+    """
+    Update worker heartbeat in Redis.
+    Health check endpoint uses this to verify worker is alive.
+    """
+    try:
+        from datetime import datetime
+        timestamp = datetime.utcnow().isoformat() + "Z"
+        redis_client.set("worker:heartbeat", timestamp, ex=120)  # 2 minute expiry
+        log_info(COMPONENT, "Heartbeat updated", step="heartbeat", timestamp=timestamp)
+    except Exception as e:
+        log_error(COMPONENT, f"Failed to update heartbeat: {e}", step="heartbeat")
+
+def heartbeat_worker(redis_client):
+    """
+    Background thread that updates heartbeat periodically.
+    """
+    global shutdown_requested
+    heartbeat_interval = int(os.getenv('WORKER_HEARTBEAT_INTERVAL', '30'))
+    
+    log_info(COMPONENT, f"Heartbeat worker started (interval: {heartbeat_interval}s)", step="heartbeat")
+    
+    while not shutdown_requested:
+        try:
+            update_heartbeat(redis_client)
+            time.sleep(heartbeat_interval)
+        except Exception as e:
+            log_error(COMPONENT, f"Heartbeat worker error: {e}", step="heartbeat")
+            time.sleep(5)
+    
+    log_info(COMPONENT, "Heartbeat worker stopped", step="heartbeat")
 
 def signal_handler(signum, frame):
     global shutdown_requested
-    logger.info(f"Received signal {signum}. Shutting down gracefully...")
+    log_info(COMPONENT, f"Received signal {signum}. Shutting down gracefully...", step="shutdown")
     shutdown_requested = True
+    
+    # Flush metrics before shutdown
+    try:
+        flush_metrics()
+        log_info(COMPONENT, "Metrics flushed on shutdown", step="shutdown")
+    except Exception as e:
+        log_error(COMPONENT, f"Failed to flush metrics on shutdown: {e}", step="shutdown")
     
     # If currently processing a job, mark it as failed
     if current_job_id:
@@ -42,12 +78,15 @@ def signal_handler(signum, frame):
                     job_data['errorMessage'] = 'Worker shutdown during processing'
                     job_data['updatedAt'] = datetime.utcnow().isoformat() + "Z"
                     r.set(job_key, json.dumps(job_data))
-                    logger.info(f"Marked job {current_job_id} as failed due to shutdown")
+                    log_info(COMPONENT, "Marked job as failed due to shutdown", 
+                            job_id=current_job_id, step="shutdown")
+                    increment("jobs_failed_total")
         except Exception as e:
-            logger.error(f"Error marking job as failed during shutdown: {e}")
+            log_error(COMPONENT, f"Error marking job as failed during shutdown: {e}", 
+                     job_id=current_job_id, step="shutdown")
 
 def run_worker():
-    global shutdown_requested, current_job_id
+    global shutdown_requested, current_job_id, heartbeat_thread
     
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -56,17 +95,24 @@ def run_worker():
     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     poll_interval = int(os.getenv('WORKER_POLL_INTERVAL', '1'))
     
-    logger.info(f"Worker starting. Connecting to Redis at {redis_url}...")
+    log_info(COMPONENT, f"Worker starting. Connecting to Redis at {redis_url}...", step="startup")
     
     try:
         r = redis.from_url(redis_url)
         r.ping()
-        logger.info("Connected to Redis successfully.")
+        log_info(COMPONENT, "Connected to Redis successfully", step="startup")
     except Exception as e:
-        logger.error(f"Failed to connect to Redis: {e}")
+        log_error(COMPONENT, f"Failed to connect to Redis: {e}", step="startup")
         return
 
-    logger.info("Listening for jobs on 'data_jobs' queue...")
+    # Start heartbeat thread
+    heartbeat_thread = threading.Thread(target=heartbeat_worker, args=(r,), daemon=True)
+    heartbeat_thread.start()
+    
+    # Initial heartbeat
+    update_heartbeat(r)
+
+    log_info(COMPONENT, "Listening for jobs on 'data_jobs' queue...", step="startup")
     
     while not shutdown_requested:
         try:
@@ -83,6 +129,12 @@ def run_worker():
                     job_id = job_payload.get('jobId')
                     current_job_id = job_id
                     
+                    log_info(COMPONENT, "Job dequeued from queue", 
+                            job_id=job_id, step="dequeue",
+                            fileName=job_payload.get('fileName'))
+                    
+                    increment("jobs_received_total")
+                    
                     # Check for cancellation before starting
                     if job_id:
                         status_key = f"job:{job_id}"
@@ -90,7 +142,8 @@ def run_worker():
                         if current_status_payload:
                             current_status = json.loads(current_status_payload).get('status')
                             if current_status == 'cancelled':
-                                logger.info(f"Job {job_id} was cancelled before processing. Skipping.")
+                                log_info(COMPONENT, "Job was cancelled before processing. Skipping.",
+                                        job_id=job_id, step="dequeue")
                                 current_job_id = None
                                 continue
 
@@ -98,23 +151,26 @@ def run_worker():
                     process_job.process_job(r, job_payload)
                     current_job_id = None
                     
-                except json.JSONDecodeError:
-                    logger.error("Failed to decode job payload JSON")
+                except json.JSONDecodeError as e:
+                    log_error(COMPONENT, "Failed to decode job payload JSON", 
+                             step="dequeue", error=str(e))
                     current_job_id = None
                 except Exception as e:
-                    logger.error(f"Unexpected error processing job: {e}", exc_info=True)
+                    log_exception(COMPONENT, "Unexpected error processing job", 
+                                 exc_info=e, job_id=current_job_id, step="process")
                     current_job_id = None
             
             # If no item, loop continues (checking shutdown_requested)
             
-        except redis.exceptions.ConnectionError:
-            logger.error("Redis connection lost. Retrying in 5 seconds...")
+        except redis.exceptions.ConnectionError as e:
+            log_error(COMPONENT, "Redis connection lost. Retrying in 5 seconds...", 
+                     step="redis_connection", error=str(e))
             time.sleep(5)
         except Exception as e:
-            logger.error(f"Worker loop error: {e}", exc_info=True)
+            log_exception(COMPONENT, "Worker loop error", exc_info=e, step="main_loop")
             time.sleep(1)
 
-    logger.info("Worker shutdown complete.")
+    log_info(COMPONENT, "Worker shutdown complete", step="shutdown")
 
 if __name__ == "__main__":
     run_worker()
