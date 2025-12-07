@@ -6,25 +6,40 @@ out/
 node_modules/
 
 # Python virtual environments
-.venv/
 venv/
 env/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Local development data
-tmp_uploads/
-data/
-dev-samples/
+# Local data and uploads
+uploads/
+results/
+*.csv
+*.xlsx
+*.json
+*.pdf
+
+# Development files
+.env.local
+.DS_Store
+*.log
 
 # Documentation
+README.md
 docs/
-prompts/
+
+# Git
+.git/
+.gitignore
+
+# CRITICAL: Exclude src/ directory from Python serverless functions
+# The API functions are self-contained and don't need src/
+src/
 
 # Build and deployment artifacts
-.git/
 .vercel/
 deployment/
 scripts/
