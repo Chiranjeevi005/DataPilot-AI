@@ -143,4 +143,8 @@ def cancel_job():
         return jsonify({"error": "Internal Server Error"}), 500
 
 # This is the handler that Vercel will use
+# Vercel looks for either 'app' or 'handler'
 handler = app
+
+# Also export as 'app' for compatibility
+# The Flask app is already imported and configured above
