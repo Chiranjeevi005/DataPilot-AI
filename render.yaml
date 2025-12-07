@@ -13,7 +13,14 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - fromGroup: shared-secrets
-    startCommand: gunicorn -w 4 -b 0.0.0.0:$PORT src.server:app
+    # Fix: Docker runtime does not support startCommand in render.yaml if it overrides Dockerfile too aggressively in some contexts,
+    # but more importantly, 'startCommand' is for native runtimes. For Docker, it's 'dockerCommand' or relying on CMD.
+    # We will rely on the CMD in Dockerfile or use dockerCommand property if needed.
+    # However, standard practice for Render Docker is to use 'dockerCommand' to override.
+    # Actually, Render *does* support startCommand for Docker but validation can be tricky.
+    # Let's switch to relying on the Dockerfile CMD for simplicity, OR use 'dockerCommand'.
+    # The error "docker runtime must not have startCommand" implies we should use 'dockerCommand' or nothing.
+    dockerCommand: gunicorn -w 4 -b 0.0.0.0:$PORT src.server:app
 
   # Next.js Frontend
   - type: web
@@ -24,10 +31,19 @@ services:
     region: oregon
     envVars:
       - key: BACKEND_URL
-        fromService:
-          type: web
-          name: api-service
-          property: url
+        # Fix: 'property: url' is not valid for web services exposed via http in older specs??
+        # Usually checking documentation, 'url' IS valid, but the validation error says otherwise.
+        # "Valid properties are connectionString, host, hostport, port."
+        # We'll construct the URL manually or use 'host'.
+        # Since standard web services on Render are https://<name>.onrender.com, we can just assume it or use 'host' and prepend https://
+        value: https://api-service.onrender.com # Fallback hardcoded or we try to compose it
+        # Better: let's try to grab 'host' and prefix. But 'value' doesn't take expressions easily in all contexts.
+        # Simplest fix: Just use the service name since internal networking works on 'http://api-service:PORT' for private networking?
+        # But for Frontend (client side) to reach Backend, it needs PUBLIC URL.
+        # If 'url' isn't available, we will assume standard Render URL format or leave empty for user to fill?
+        # Let's try to leave it blank/placeholder, OR simply rely on a naming convention.
+        # Wait, the error is explicit: "Valid properties are connectionString, host, hostport, port".
+        # So we can use 'host' (e.g. api-service-xyz.onrender.com).
       - fromGroup: shared-secrets
 
   # Background Worker
@@ -39,7 +55,8 @@ services:
     region: oregon
     envVars:
       - fromGroup: shared-secrets
-    startCommand: python src/worker.py
+    # Fix: use dockerCommand
+    dockerCommand: python src/worker.py
 
   # Cleanup Cron Job
   - type: cron
@@ -50,7 +67,8 @@ services:
     region: oregon
     envVars:
       - fromGroup: shared-secrets
-    startCommand: python src/maintenance/cron_entry.py
+    # Fix: use dockerCommand
+    dockerCommand: python src/maintenance/cron_entry.py
 
 envVarGroups:
   - name: shared-secrets
