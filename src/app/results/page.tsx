@@ -20,7 +20,7 @@ import { Share2, Download, Gauge, RefreshCcw, AlertTriangle } from 'lucide-react
 function ResultsPageContent() {
     const isOpen = useSidebarStore((state) => state.isOpen);
     const searchParams = useSearchParams();
-    const jobId = searchParams.get('jobId');
+    const jobId = searchParams?.get('jobId');
 
     const {
         loading,

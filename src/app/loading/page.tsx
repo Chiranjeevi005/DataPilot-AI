@@ -16,7 +16,7 @@ function LoadingPageContent() {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     // Get jobId from URL query param first, fallback to store
-    const jobId = searchParams.get('jobId') || storeJobId;
+    const jobId = searchParams?.get('jobId') || storeJobId;
 
     const handleCancel = () => {
         reset();
