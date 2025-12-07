@@ -11,7 +11,7 @@ function getRedisClient() {
 
 export async function GET(
     request: NextRequest,
-    context: { params: Promise<{ jobId: string }> }
+    { params }: any
 ) {
     const headers = {
         'Access-Control-Allow-Origin': '*',
@@ -20,7 +20,9 @@ export async function GET(
     };
 
     try {
-        const { jobId } = await context.params;
+        // Handle both Promise and direct params
+        const resolvedParams = params.jobId ? params : await params;
+        const jobId = resolvedParams.jobId;
 
         console.log('[JOB-STATUS] Checking status for:', jobId);
 
