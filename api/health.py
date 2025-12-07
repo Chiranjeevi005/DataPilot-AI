@@ -1,14 +1,9 @@
-"""
-Vercel Serverless Function for /api/health endpoint
-"""
-
 import os
 import sys
 
-# Ensure the project root and src directory are in the Python path
+# Add project paths
 project_root = os.getcwd()
 src_path = os.path.join(project_root, 'src')
-
 for path in [project_root, src_path]:
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -24,7 +19,6 @@ app = Flask(__name__)
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
     try:
         import uuid
         request_id = str(uuid.uuid4())[:8]
@@ -72,5 +66,3 @@ def health_check():
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "error": str(e)
         }), 500
-
-# Vercel will use this Flask app directly
