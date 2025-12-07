@@ -1,4 +1,5 @@
 {
+    "buildCommand": "rm -rf .next && next build",
     "env": {
         "BLOB_ENABLED": "false",
         "MAX_UPLOAD_SIZE_BYTES": "20971520",
