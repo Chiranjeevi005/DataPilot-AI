@@ -1,9 +1,4 @@
-# Minimal dependencies for Vercel serverless functions
-# Heavy data processing libraries removed (pandas, numpy, etc.)
-# since background worker cannot run on Vercel anyway
-
-flask==3.0.0
-flask-cors==4.0.0
+# Absolute minimal dependencies for Vercel serverless functions
+# Using BaseHTTPRequestHandler - no Flask needed
 python-dotenv==1.0.0
 redis==5.0.1
-requests==2.31.0
