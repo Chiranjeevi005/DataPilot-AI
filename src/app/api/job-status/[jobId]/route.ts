@@ -11,13 +11,21 @@ function getRedisClient() {
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: Promise<{ jobId: string }> }
+    context: { params: Promise<{ jobId: string }> }
 ) {
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+
     try {
-        const { jobId } = await params;
+        const { jobId } = await context.params;
+
+        console.log('[JOB-STATUS] Checking status for:', jobId);
 
         if (!jobId) {
-            return NextResponse.json({ error: 'Missing job ID' }, { status: 400 });
+            return NextResponse.json({ error: 'Missing job ID' }, { status: 400, headers });
         }
 
         const redis = getRedisClient();
@@ -25,11 +33,13 @@ export async function GET(
         const dataStr = await redis.get(jobKey);
 
         if (!dataStr) {
+            console.error('[JOB-STATUS] Job not found:', jobKey);
             await redis.quit();
-            return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+            return NextResponse.json({ error: 'Job not found' }, { status: 404, headers });
         }
 
         const data = JSON.parse(dataStr);
+        console.log('[JOB-STATUS] Job data:', data);
 
         // Check for timeout
         if (data.status === 'processing' && data.timeoutAt) {
@@ -60,13 +70,27 @@ export async function GET(
         if (data.updatedAt) response.updatedAt = data.updatedAt;
         if (data.cancelledAt) response.cancelledAt = data.cancelledAt;
 
-        return NextResponse.json(response);
+        console.log('[JOB-STATUS] Returning response:', response);
+
+        return NextResponse.json(response, { headers });
 
     } catch (error: any) {
-        console.error('Job status error:', error);
+        console.error('[JOB-STATUS] Error:', error);
         return NextResponse.json({
             error: 'Internal Server Error',
-            message: error.message
-        }, { status: 500 });
+            message: error.message,
+            stack: error.stack
+        }, { status: 500, headers });
     }
+}
+
+export async function OPTIONS() {
+    return new NextResponse(null, {
+        status: 200,
+        headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        },
+    });
 }
