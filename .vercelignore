@@ -1,0 +1,51 @@
+# Next.js build output (156MB - MUST exclude from Python functions)
+.next/
+out/
+
+# Node modules (handled separately by Vercel)
+node_modules/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local development data
+tmp_uploads/
+data/
+dev-samples/
+
+# Documentation
+docs/
+prompts/
+
+# Build and deployment artifacts
+.git/
+.vercel/
+deployment/
+scripts/
+
+# Metrics and reports
+metrics/
+reports/
+
+# Logs
+*.log
+backend_errors.log
+
+# IDE
+.vscode/
+
+# Maintenance and collectors (not needed in production)
+src/maintenance/
+src/collectors/
+
+# Test files
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
