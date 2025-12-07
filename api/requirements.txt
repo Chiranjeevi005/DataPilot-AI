@@ -1,12 +1,9 @@
+# Minimal dependencies for Vercel serverless functions
+# Heavy data processing libraries removed (pandas, numpy, etc.)
+# since background worker cannot run on Vercel anyway
+
 flask==3.0.0
 flask-cors==4.0.0
 python-dotenv==1.0.0
 redis==5.0.1
 requests==2.31.0
-pandas==2.1.4
-numpy==1.26.2
-openpyxl==3.1.2
-python-dateutil==2.8.2
-pdfplumber==0.10.3
-openai==1.6.1
-rq==1.15.1
