@@ -46,10 +46,8 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Add file handler to capture errors we can't see in detached consoles
-fh = logging.FileHandler('backend_errors.log')
-fh.setLevel(logging.ERROR)
-logger.addHandler(fh)
+# Note: Vercel serverless functions have read-only filesystem except /tmp
+# Removed FileHandler to avoid OSError in production
 
 from flask_cors import CORS
 CORS(app)
