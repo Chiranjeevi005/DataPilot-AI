@@ -1,4 +1,0 @@
-# Absolute minimal dependencies for Vercel serverless functions
-# Using BaseHTTPRequestHandler - no Flask needed
-python-dotenv==1.0.0
-redis==5.0.1
