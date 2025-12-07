@@ -35,9 +35,13 @@
 - **Validation-First**: Schema validation with automatic fallback to deterministic templates
 - **Audit Logging**: Complete observability without exposing sensitive information
 
+
 ---
 
 ## 🏗️ Architecture
+
+
+
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -76,6 +80,9 @@
 
 ### **Data Flow**
 
+
+
+
 1. **Upload** → User uploads file via drag-and-drop or file picker
 2. **Queue** → Backend validates file and enqueues job in Redis
 3. **Process** → Worker dequeues job and performs:
@@ -87,9 +94,13 @@
 4. **Store** → Results saved to blob storage or local filesystem
 5. **Display** → Frontend polls for status and renders interactive results
 
+
 ---
 
 ## 🛠️ Tech Stack
+
+
+
 
 ### **Frontend**
 - **Framework**: Next.js 15 (App Router)
