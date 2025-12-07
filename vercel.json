@@ -1,10 +1,4 @@
 {
-    "rewrites": [
-        {
-            "source": "/api/:path*",
-            "destination": "/api/index.py"
-        }
-    ],
     "env": {
         "BLOB_ENABLED": "false",
         "MAX_UPLOAD_SIZE_BYTES": "20971520",
