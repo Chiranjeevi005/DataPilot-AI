@@ -14,7 +14,6 @@ for path in [project_root, src_path]:
         sys.path.insert(0, path)
 
 from flask import Flask, jsonify
-import json
 import logging
 from datetime import datetime
 
@@ -74,40 +73,4 @@ def health_check():
             "error": str(e)
         }), 500
 
-def handler(event, context):
-    """Vercel serverless function handler"""
-    from werkzeug.wrappers import Request
-    from io import BytesIO
-    
-    environ = {
-        'REQUEST_METHOD': 'GET',
-        'SCRIPT_NAME': '',
-        'PATH_INFO': '/api/health',
-        'QUERY_STRING': '',
-        'SERVER_NAME': 'localhost',
-        'SERVER_PORT': '443',
-        'SERVER_PROTOCOL': 'HTTP/1.1',
-        'wsgi.version': (1, 0),
-        'wsgi.url_scheme': 'https',
-        'wsgi.input': BytesIO(b''),
-        'wsgi.errors': sys.stderr,
-        'wsgi.multithread': False,
-        'wsgi.multiprocess': True,
-        'wsgi.run_once': False,
-    }
-    
-    response_data = []
-    def start_response(status, headers):
-        response_data.append((status, headers))
-    
-    app_response = app(environ, start_response)
-    
-    status_code = int(response_data[0][0].split()[0])
-    headers_dict = {k: v for k, v in response_data[0][1]}
-    body = b''.join(app_response).decode('utf-8')
-    
-    return {
-        'statusCode': status_code,
-        'headers': headers_dict,
-        'body': body
-    }
+# Vercel will use this Flask app directly
