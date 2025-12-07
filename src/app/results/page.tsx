@@ -16,11 +16,10 @@ import InsightsPanel from '@/components/results/InsightsPanel';
 import DataPreviewTable from '@/components/results/DataPreviewTable';
 import { Share2, Download, Gauge, RefreshCcw, AlertTriangle } from 'lucide-react';
 
-
-function ResultsPageContent() {
+export default function ResultsPage() {
     const isOpen = useSidebarStore((state) => state.isOpen);
     const searchParams = useSearchParams();
-    const jobId = searchParams?.get('jobId');
+    const jobId = searchParams.get('jobId');
 
     const {
         loading,
@@ -501,12 +500,3 @@ function ResultsPageContent() {
         </EvidenceHighlightProvider>
     );
 }
-
-export default function ResultsPage() {
-    return (
-        <React.Suspense fallback={<div className="min-h-screen bg-datapilot-page flex items-center justify-center">Loading results...</div>}>
-            <ResultsPageContent />
-        </React.Suspense>
-    );
-}
-

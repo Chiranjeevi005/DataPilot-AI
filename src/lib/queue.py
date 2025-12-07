@@ -7,30 +7,16 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 def get_redis_client():
-    """Create and return a Redis client with SSL support for Upstash."""
+    """Create and return a Redis client."""
     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     
-    # Upstash Redis requires SSL
-    # Convert redis:// to rediss:// for SSL connection
+    # Auto-upgrade to TLS for Upstash if scheme is redis://
     if 'upstash.io' in redis_url and redis_url.startswith('redis://'):
-        redis_url = redis_url.replace('redis://', 'rediss://')
-    
-    try:
-        # Create client with SSL support
-        client = redis.from_url(
-            redis_url,
-            decode_responses=False,  # We handle decoding manually
-            socket_connect_timeout=5,
-            socket_timeout=5,
-            retry_on_timeout=True,
-            health_check_interval=30
-        )
-        # Test connection
-        client.ping()
-        return client
-    except Exception as e:
-        logger.error(f"Redis connection failed: {e}")
-        raise
+        redis_url = redis_url.replace('redis://', 'rediss://', 1)
+        
+    # For Upstash/Production, we might need to ignore cert warnings if using self-signed (unlikely for Upstash but safe)
+    # But usually standard SSL verification works for Upstash.
+    return redis.from_url(redis_url)
 
 def create_job_key(redis_client, job_id: str, data: dict):
     """

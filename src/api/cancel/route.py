@@ -12,20 +12,20 @@ if src_dir not in sys.path:
 
 # Try imports
 try:
-    from flask import Flask, request, jsonify
+    from flask import Blueprint, request, jsonify
     from src.lib.queue import get_redis_client
 except ImportError:
     sys.path.append(os.path.join(os.getcwd(), 'src'))
     from lib.queue import get_redis_client
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize Blueprint
+cancel_bp = Blueprint('cancel', __name__)
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@app.route('/api/cancel', methods=['POST'])
+@cancel_bp.route('/api/cancel', methods=['POST'])
 def cancel_job():
     """
     Cancel a job by setting its status to 'cancelled'.
@@ -101,7 +101,4 @@ def cancel_job():
         return jsonify({"error": "Internal Server Error"}), 500
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 5328))
-    print(f"Starting cancel endpoint on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+

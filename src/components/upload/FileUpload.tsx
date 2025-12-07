@@ -186,7 +186,7 @@ export default function FileUpload() {
 
                     {/* Desktop Hint */}
                     <p className="hidden md:block text-slate-500">
-                        Drag & drop your CSV, Excel, or JSON here, click to browse.
+                        Drag & drop your CSV, Excel, or PDF here, or click to browse.
                     </p>
 
                     {/* Mobile Button - Prominent CTA */}

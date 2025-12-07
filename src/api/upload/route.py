@@ -15,7 +15,7 @@ if src_dir not in sys.path:
 
 # Try imports
 try:
-    from flask import Flask, request, jsonify
+    from flask import Blueprint, request, jsonify
     from src.lib.utils import (
         generate_job_id,
         validate_file_extension,
@@ -39,20 +39,19 @@ except ImportError:
     from lib.storage import save_file_to_blob, save_file_to_tmp, get_storage_path
     from lib.queue import get_redis_client, create_job_key, enqueue_job
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize Blueprint
+upload_bp = Blueprint('upload', __name__)
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Note: Vercel serverless functions have read-only filesystem except /tmp
-# Removed FileHandler to avoid OSError in production
+# Add file handler to capture errors we can't see in detached consoles
+fh = logging.FileHandler('backend_errors.log')
+fh.setLevel(logging.ERROR)
+logger.addHandler(fh)
 
-from flask_cors import CORS
-CORS(app)
-
-@app.route('/api/upload', methods=['POST'])
+@upload_bp.route('/api/upload', methods=['POST'])
 def upload_handler():
     try:
         content_length = request.content_length
@@ -156,7 +155,7 @@ def upload_handler():
         logger.error(f"Unexpected error: {e}", exc_info=True)
         return jsonify({"error": "Internal Server Error"}), 500
 
-@app.route('/api/job-status/<job_id>', methods=['GET'])
+@upload_bp.route('/api/job-status/<job_id>', methods=['GET'])
 def get_job_status(job_id):
     try:
         from datetime import datetime
@@ -213,7 +212,7 @@ def get_job_status(job_id):
         logger.error(f"Error fetching status for {job_id}: {e}", exc_info=True)
         return jsonify({"error": "Internal Server Error"}), 500
 
-@app.route('/api/results/<job_id>', methods=['GET'])
+@upload_bp.route('/api/results/<job_id>', methods=['GET'])
 def get_job_result(job_id):
     try:
         from flask import send_file
@@ -240,10 +239,4 @@ def get_job_result(job_id):
 #         return jsonify({"error": "Unauthorized"}), 401
 
 
-if __name__ == "__main__":
-    # Dev server behavior
-    port = int(os.environ.get('PORT', 5328)) # Using 5328 default for python backend often used in nextjs
-    print(f"Starting dev server on port {port}")
-    if not os.getenv("OPENROUTER_API_KEY"):
-        print("WARNING: OPENROUTER_API_KEY not set. Real AI insights will NOT work.")
-    app.run(host='0.0.0.0', port=port, debug=True)
+

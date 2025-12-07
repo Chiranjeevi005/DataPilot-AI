@@ -31,7 +31,7 @@ export const useResultStore = create<ResultState>((set, get) => ({
                 set({ loading: true, error: null });
 
                 // 1. Get Job Status first
-                const statusRes = await fetch(`/api/job-status/${jobId}`);
+                const statusRes = await fetch(`/api/job-status?jobId=${jobId}`);
                 if (!statusRes.ok) throw new Error("Failed to check job status");
 
                 const statusData = await statusRes.json();

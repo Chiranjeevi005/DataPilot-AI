@@ -1,22 +1,23 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useState } from 'react';
 import LoadingState from '@/components/loading/LoadingState';
 import { useAppStore, useSidebarStore } from '@/lib/store';
 import { useRouter, useSearchParams } from 'next/navigation';
 import axios from 'axios';
 import NavBar from '@/components/NavBar';
 import Sidebar from '@/components/Sidebar';
-import { cn } from '@/lib/utils'; // Fixed import to match typical util usage
+import { cn } from '@/lib/utils';
 
-function LoadingPageContent() {
+export default function LoadingPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { jobId: storeJobId, updateJobStatus, currentStep, reset } = useAppStore();
+    const { jobId: storeJobId, jobStatus, updateJobStatus, setResults, currentStep, reset } = useAppStore();
+    const isOpen = useSidebarStore((state) => state.isOpen);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     // Get jobId from URL query param first, fallback to store
-    const jobId = searchParams?.get('jobId') || storeJobId;
+    const jobId = searchParams.get('jobId') || storeJobId;
 
     const handleCancel = () => {
         reset();
@@ -44,8 +45,7 @@ function LoadingPageContent() {
 
             try {
                 console.log(`Polling job status for: ${jobId}`);
-                // Use path parameter for compatibility with Python backend
-                const { data } = await axios.get(`/api/job-status/${jobId}`);
+                const { data } = await axios.get(`/api/job-status?jobId=${jobId}`);
 
                 console.log(`Job ${jobId} status:`, data.status);
 
@@ -94,30 +94,20 @@ function LoadingPageContent() {
     }, [jobId, router, updateJobStatus]);
 
     return (
-        errorMessage ? (
-            <div className="text-center">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
-                    <div className="text-red-600 font-semibold mb-2">Error</div>
-                    <div className="text-red-800">{errorMessage}</div>
-                </div>
-            </div>
-        ) : (
-            <LoadingState currentStep={currentStep} onCancel={handleCancel} />
-        )
-    );
-}
-
-export default function LoadingPage() {
-    const isOpen = useSidebarStore((state) => state.isOpen);
-
-    return (
         <div className="min-h-screen bg-background font-sans text-slate-900">
             <NavBar />
             <Sidebar />
             <main className={cn("min-h-screen pt-24 pb-10 flex items-center justify-center transition-all duration-300 ease-in-out", isOpen ? "md:ml-20 lg:ml-72" : "ml-0")}>
-                <Suspense fallback={<div className="flex items-center justify-center"><div className="w-8 h-8 border-t-2 border-blue-500 rounded-full animate-spin"></div></div>}>
-                    <LoadingPageContent />
-                </Suspense>
+                {errorMessage ? (
+                    <div className="text-center">
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
+                            <div className="text-red-600 font-semibold mb-2">Error</div>
+                            <div className="text-red-800">{errorMessage}</div>
+                        </div>
+                    </div>
+                ) : (
+                    <LoadingState currentStep={currentStep} onCancel={handleCancel} />
+                )}
             </main>
         </div>
     );

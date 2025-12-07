@@ -16,7 +16,7 @@ if src_dir not in sys.path:
 
 # Try imports
 try:
-    from flask import Flask, jsonify
+    from flask import Blueprint, jsonify
     from src.lib.queue import get_redis_client
     from src.observability import log_info, log_error, generate_request_id
 except ImportError:
@@ -24,8 +24,8 @@ except ImportError:
     from lib.queue import get_redis_client
     from observability import log_info, log_error, generate_request_id
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize Blueprint
+health_bp = Blueprint('health', __name__)
 
 COMPONENT = "health_check"
 
@@ -126,7 +126,7 @@ def check_worker():
     except Exception as e:
         return "error", {"message": f"Worker heartbeat check error: {str(e)}"}
 
-@app.route('/api/health', methods=['GET'])
+@health_bp.route('/api/health', methods=['GET'])
 def health_check():
     """
     Health check endpoint.
@@ -194,8 +194,4 @@ def health_check():
             "error": str(e)
         }), 500
 
-if __name__ == "__main__":
-    # Dev server behavior
-    port = int(os.environ.get('PORT', 5329))
-    print(f"Starting health check server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+

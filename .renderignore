@@ -1,0 +1,11 @@
+node_modules
+.venv
+tmp_uploads
+.env
+.next
+.git
+__pycache__
+*.pyc
+metrics/
+reports/
+backend_errors.log
