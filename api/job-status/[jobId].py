@@ -1,30 +1,27 @@
 """
 Vercel Serverless Function for /api/job-status/[jobId]
+Self-contained implementation without heavy src/ dependencies
 """
 
 from http.server import BaseHTTPRequestHandler
 import os
-import sys
 import json
-
-# Add paths
-project_root = os.getcwd()
-src_path = os.path.join(project_root, 'src')
-for path in [project_root, src_path]:
-    if path not in sys.path:
-        sys.path.insert(0, path)
+from datetime import datetime
+import redis
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests for job status"""
         try:
-            from src.lib.queue import get_redis_client
-            from datetime import datetime
+            def get_redis_client():
+                redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+                if 'upstash.io' in redis_url and redis_url.startswith('redis://'):
+                    redis_url = redis_url.replace('redis://', 'rediss://')
+                return redis.from_url(redis_url, decode_responses=False, socket_timeout=5)
             
             # Extract job_id from path
-            # Path will be like /api/job-status/job_20251207_045404_1473
             path_parts = self.path.split('/')
-            job_id = path_parts[-1].split('?')[0]  # Remove query params if any
+            job_id = path_parts[-1].split('?')[0]
             
             if not job_id:
                 self.send_response(400)
@@ -37,9 +34,9 @@ class handler(BaseHTTPRequestHandler):
             # Get job from Redis
             r = get_redis_client()
             job_key = f"job:{job_id}"
-            data_str = r.get(job_key)
+            data_bytes = r.get(job_key)
             
-            if not data_str:
+            if not data_bytes:
                 self.send_response(404)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
@@ -47,9 +44,9 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "Job not found"}).encode())
                 return
             
-            data = json.loads(data_str)
+            data = json.loads(data_bytes.decode('utf-8'))
             
-            # Check for timeout if job is still processing
+            # Check for timeout
             if data.get('status') == 'processing':
                 timeout_at_str = data.get('timeoutAt')
                 if timeout_at_str:
@@ -58,16 +55,13 @@ class handler(BaseHTTPRequestHandler):
                         now = datetime.utcnow()
                         
                         if now > timeout_at.replace(tzinfo=None):
-                            # Job has timed out
                             data['status'] = 'failed'
                             data['error'] = 'timeout'
                             data['errorMessage'] = 'Job exceeded maximum processing time'
                             data['updatedAt'] = datetime.utcnow().isoformat() + "Z"
-                            
-                            # Update Redis
-                            r.set(job_key, json.dumps(data))
-                    except Exception as e:
-                        pass  # Continue with current status
+                            r.set(job_key, json.dumps(data).encode('utf-8'))
+                    except:
+                        pass
             
             # Return job data
             response = {
