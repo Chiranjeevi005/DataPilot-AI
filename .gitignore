@@ -52,4 +52,50 @@ venv/
 
 # local data
 tmp_uploads/
+reports/
+data/feedback/
+data/finetune_ready/
+data/llm_logs/
+
+# test files
+test_*.py
+test_*.txt
+test_*.sh
+**/test_*.py
+**/test_*.sh
+
+# debug and temporary files
+*.log
+debug_*.py
+check_*.py
+diagnose_*.py
+verify_*.py
+get_*.py
+mark_*.py
+
+# temporary documentation (keep only README.md and docs/)
+*_FIX.md
+*_COMPLETE.md
+*_STATUS.md
+*_SUMMARY.md
+*_DEPLOYMENT*.md
+*_IMPLEMENTATION*.md
+*_REFERENCE.md
+*_CHECKLIST.md
+PHASE_*.md
+DEMO_*.md
+LOADING_*.md
+CHART_*.md
+FILE_*.md
+DOWNLOAD_*.md
+ENHANCED_*.md
+GPT*.md
+LLM_*.md
+LOCAL_*.md
+OBSERVABILITY_*.md
+CLEANUP_*.md
+COMPLETE_*.md
+GIT_*.md
+ANTIGRAVITY_*.md
+README_PHASE_*.md
 
